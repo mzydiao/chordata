@@ -9,6 +9,7 @@ let nodes;
 
 const opts = {
 	stabilizeInterval: 100,
+	fixFingersInterval: 100,
 };
 
 async function simulate(numPeople) {
