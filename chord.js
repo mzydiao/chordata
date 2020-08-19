@@ -191,23 +191,22 @@ class ChordNode {
 			.then((correct_finger) => {
 				correct_finger = BigInt(correct_finger);
 				if (correct_finger === this.own_id) return;
+
 				if (this.fingers[this.next] != correct_finger) {
-					if (!this.functions.hasConnection(correct_finger)) {
-						this.functions.connect(correct_finger).then(() => {
-							let old_finger = this.fingers[this.next];
-							this.fingers[this.next] = correct_finger;
-							if (
-								old_finger !== null &&
-								!this.fingers.includes(old_finger)
-							) {
-								return this.functions.disconnect(old_finger);
-							}
-							//might need to care about edge case where neg
-							//and pos fingers collide?
-						});
-					} else {
-						this.fingers[this.next] = correct_finger;
+					let old_finger = this.fingers[this.next];
+					this.fingers[this.next] = correct_finger;
+
+					// might need to care about edge case where neg
+					// and pos fingers collide?
+					if (
+						old_finger !== null &&
+						!this.fingers.includes(old_finger)
+					) {
+						this.functions.disconnect(old_finger);
 					}
+
+					if (!this.functions.hasConnection(correct_finger))
+						this.functions.connect(correct_finger).then(() => {});
 				}
 			})
 			.catch((error) => {
