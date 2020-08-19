@@ -14,12 +14,17 @@ class ChordNode {
 
 		this.fingers = Array(Number(m)).fill(null);
 
-		setInterval(() => {
+		this.stabilizeHandle = setInterval(() => {
 			this.stabilize();
 		}, stabilizeInterval);
-		setInterval(() => {
+		this.fixFingersHandle = setInterval(() => {
 			this.fix_fingers();
 		}, fixFingersInterval);
+	}
+
+	destroy() {
+		clearInterval(this.stabilizeHandle);
+		clearInterval(this.fixFingersHandle);
 	}
 
 	// create()
@@ -31,9 +36,13 @@ class ChordNode {
 	// notify(n)
 	// send_rpc(NOTIFY, n) // calls peer.send()
 	notify(id) {
-		this.functions.send_rpc(id, {
-			type: "NOTIFY",
-		}); //?
+		this.functions
+			.send_rpc(id, {
+				type: "NOTIFY",
+			})
+			.catch((err) => {
+				console.error("notify", err);
+			}); //?
 	}
 
 	// join(id) // id is guaranteed to be this.successor based on server
@@ -80,6 +89,9 @@ class ChordNode {
 						}
 					}
 				}
+			})
+			.catch((err) => {
+				console.error("stabilize", err);
 			});
 		this.notify(this.fingers[0]);
 	}
@@ -144,8 +156,9 @@ class ChordNode {
 		if (id == this.predecessor) {
 			this.predecessor = null;
 		} else if (id == this.fingers[0]) {
-			let successorList = this.functions.query_successors().then(() => {
-				successorIndex = 0;
+			this.functions.query_successors().then((successorList) => {
+				console.log(successorList);
+				let successorIndex = 0;
 				if (this.fingers[0] == null) {
 					throw "no this.fingers[0]";
 				}
@@ -167,6 +180,8 @@ class ChordNode {
 							attemptConnection();
 						});
 				};
+
+				attemptConnection();
 			});
 		}
 		this.notify(this.fingers[0]);
@@ -202,13 +217,17 @@ class ChordNode {
 						old_finger !== null &&
 						!this.fingers.includes(old_finger)
 					) {
-						this.functions.disconnect(old_finger);
+						this.functions.disconnect(old_finger).catch((err) => {
+							console.error(err);
+						});
 					}
 
 					if (!this.functions.hasConnection(correct_finger))
 						this.functions.connect(correct_finger).then(() => {});
 				} else if (!this.functions.hasConnection(correct_finger)) {
-					this.functions.connect(correct_finger);
+					this.functions.connect(correct_finger).catch((err) => {
+						console.error(err);
+					});
 				}
 			})
 			.catch((error) => {
@@ -231,16 +250,30 @@ class ChordNode {
 			if (this.between(this.own_id, id, this.fingers[0] + 1n))
 				resolve(this.fingers[0]);
 			else {
-				let consult = this.closest_preceding_node(id);
-				this.functions
-					.send_rpc(consult, {
-						type: "FIND_SUCCESSOR",
-						content: id.toString(),
-					})
-					.then((p) => {
-						p = BigInt(p);
-						resolve(p);
-					});
+				const consultList = this.closest_preceding_node(id);
+				const ask = () => {
+					if (consultList.length === 0) {
+						reject("could not contact preceding nodes");
+						return;
+					}
+
+					const consult = consultList.shift();
+					this.functions
+						.send_rpc(consult, {
+							type: "FIND_SUCCESSOR",
+							content: id.toString(),
+						})
+						.then((p) => {
+							p = BigInt(p);
+							resolve(p);
+						})
+						.catch((err) => {
+							console.error("find successor", err);
+							ask();
+						});
+				};
+
+				ask();
 			}
 		});
 	}
@@ -250,13 +283,14 @@ class ChordNode {
 	// 		return finger[i]
 	// return this.own_id
 	closest_preceding_node(id) {
+		const consult = [];
 		for (let i = Number(m) - 1; i >= 0; i--) {
 			if (this.fingers[i] === null) continue;
 
 			if (this.between(this.own_id, this.fingers[i], id))
-				return this.fingers[i];
+				consult.push(this.fingers[i]);
 		}
-		return this.own_id;
+		return consult;
 	}
 }
 

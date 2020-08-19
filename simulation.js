@@ -26,14 +26,19 @@ async function simulate(numPeople) {
 			JSON.stringify(object[object.length - 1]) != JSON.stringify(tmp)
 		) {
 			object.push(tmp);
+			console.log("list", object.length);
 		}
 	}, 50);
 
+	let toDisconnect = [];
+
 	for (let i = 0; i < numPeople; i++) {
+		console.log(i);
 		let hash = BigInt(genHash());
 		let funcs = generateFuncs(hash);
 
 		neighbors.set(hash, new Set());
+		toDisconnect.push(hash);
 
 		let newGuy = new ChordNode(hash, funcs, opts); //hash, funcs
 		nodes.set(hash, newGuy);
@@ -46,8 +51,24 @@ async function simulate(numPeople) {
 			});
 		}
 		await sleep(1000);
-    }
-    
+	}
+
+	console.log("deleting...");
+	for (let i = 0; i < 1; i++) {
+		let h = toDisconnect.pop();
+		console.log(i, h);
+
+		neighbors.get(h).forEach((v, k, s) => {
+			neighbors.get(v).delete(h);
+			nodes.get(v).on_disconnect(h);
+		});
+		nodes.get(h).destroy();
+		nodes.delete(h);
+		neighbors.delete(h);
+
+		await sleep(1000);
+	}
+
 	fs.writeFile("data.json", JSON.stringify(object), (err) => {
 		console.error(err);
 	});
@@ -94,6 +115,11 @@ function genHash() {
 function generateFuncs(hash) {
 	let connect = (id) => {
 		return new Promise((resolve, reject) => {
+			if (!neighbors.has(id)) {
+				reject("could not connect node " + id);
+				return;
+			}
+
 			neighbors.get(hash).add(id);
 			neighbors.get(id).add(hash);
 			resolve();
@@ -101,6 +127,11 @@ function generateFuncs(hash) {
 	};
 	let disconnect = (id) => {
 		return new Promise((resolve, reject) => {
+			if (!neighbors.has(id)) {
+				reject("could not disconnect node " + id);
+				return;
+			}
+
 			neighbors.get(hash).delete(id);
 			neighbors.get(id).delete(hash);
 			resolve();
@@ -115,7 +146,8 @@ function generateFuncs(hash) {
 	};
 	let send_rpc = (id, data) => {
 		return new Promise((resolve, reject) => {
-			nodes.get(id).handle_rpc(hash, data, resolve);
+			if (nodes.has(id)) nodes.get(id).handle_rpc(hash, data, resolve);
+			else reject("could not contact node " + id);
 		});
 	};
 	let query_successors = () => {
