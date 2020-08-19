@@ -221,3 +221,5 @@ class ChordNode {
         return this.own_id;
     }
 }
+
+module.exports = ChordNode
