@@ -89,9 +89,12 @@ class ChordNode {
 		//sender is a BigInt
 		switch (data.type) {
 			case "NOTIFY":
-				if (this.predecessor < sender && sender < this.own_id) {
-					this.predecessor = sender;
-				}
+                if (
+                    (this.predecessor < sender && sender < this.own_id) ||
+                    this.predecessor === null
+                ) {
+                    this.predecessor = sender;
+                }
 				resolve_rpc(null);
 			case "GET_PREDECESSOR":
 				resolve_rpc(
