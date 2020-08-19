@@ -26,7 +26,6 @@ async function simulate(numPeople) {
 			JSON.stringify(object[object.length - 1]) != JSON.stringify(tmp)
 		) {
 			object.push(tmp);
-			console.log("list", object.length);
 		}
 	}, 50);
 
@@ -47,9 +46,8 @@ async function simulate(numPeople) {
 			});
 		}
 		await sleep(1000);
-		console.log(i);
-	}
-
+    }
+    
 	fs.writeFile("data.json", JSON.stringify(object), (err) => {
 		console.error(err);
 	});

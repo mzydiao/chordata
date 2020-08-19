@@ -208,7 +208,10 @@ class ChordNode {
 					} else {
 						this.fingers[this.next] = correct_finger;
 					}
-				}
+                }
+                else if (!this.functions.hasConnection(correct_finger)) {
+                    this.functions.connect(correct_finger);
+                }
 			})
 			.catch((error) => {
 				console.error(error);
