@@ -189,20 +189,24 @@ class ChordNode {
 		this.find_successor(this.own_id + 4n ** this.next)
 			.then((correct_finger) => {
 				correct_finger = BigInt(correct_finger);
+				if (correct_finger === this.own_id) return;
 				if (this.fingers[this.next] != correct_finger) {
 					if (!this.functions.hasConnection(correct_finger)) {
 						this.functions
 							.connect(correct_finger)
 							.then(() => {
-								return this.functions.disconnect(
-									this.fingers[this.next]
-								);
+								if (this.fingers[this.next] !== null)
+									return this.functions.disconnect(
+										this.fingers[this.next]
+									);
 								//might need to care about edge case where neg
 								//and pos fingers collide?
 							})
 							.then(() => {
 								this.fingers[this.next] = correct_finger;
 							});
+					} else {
+						this.fingers[this.next] = correct_finger;
 					}
 				}
 			})
@@ -246,10 +250,8 @@ class ChordNode {
 	// return this.own_id
 	closest_preceding_node(id) {
 		for (let i = Number(m) - 1; i >= 0; i--) {
-			console.log(i, this.fingers[i], this.fingers, this.own_id, 4n, m);
 			if (this.fingers[i] === null) continue;
 
-			let finger_mod = (this.fingers[i] - this.own_id) % 4n ** m;
 			if (this.between(this.own_id, this.fingers[i], id))
 				return this.fingers[i];
 		}

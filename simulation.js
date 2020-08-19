@@ -1,4 +1,4 @@
-const m = 4;
+const m = 8;
 const ChordNode = require("./chord")(m);
 const fs = require("fs");
 
