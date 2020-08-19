@@ -187,7 +187,7 @@ class ChordNode {
 		if (this.next >= m) {
 			this.next = 1n;
 		}
-		this.find_successor(this.own_id + 4n ** this.next)
+		this.find_successor((this.own_id + 4n ** this.next) % 4n ** m)
 			.then((correct_finger) => {
 				correct_finger = BigInt(correct_finger);
 				if (correct_finger === this.own_id) return;
