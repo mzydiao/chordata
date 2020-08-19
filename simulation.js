@@ -70,14 +70,17 @@ function generateFuncs(hash) {
 	let query_successors = () => {
 		return new Promise((resolve, reject) => {
 			let allHashes = Array.from(nodes.keys());
-			allHashes.sort();
+			allHashes.sort((a, b) => {
+				if (a < b) return -1;
+				else if (a > b) return 1;
+				return 0;
+			});
 
 			let rotateIndex = allHashes.indexOf(hash);
-			resolve(
-				allHashes
-					.slice(0, rotateIndex)
-					.concat(allHashes.slice(rotateIndex + 1, allHashes.length))
-			);
+			let rotated = allHashes
+				.slice(rotateIndex + 1, allHashes.length)
+				.concat(allHashes.slice(0, rotateIndex));
+			resolve(rotated);
 		});
 	};
 	return {
@@ -93,7 +96,6 @@ function generateFuncs(hash) {
 function jsonify(map) {
 	let obj = {};
 	map.forEach((v, k, m) => {
-		console.log(v);
 		obj[k] = Array.from(v).map((bigint) => bigint.toString());
 	});
 	return JSON.stringify(obj);
