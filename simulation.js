@@ -7,6 +7,10 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let neighbors;
 let nodes;
 
+const opts = {
+	stabilizeInterval: 100,
+};
+
 async function simulate(numPeople) {
 	let object = [];
 
@@ -14,13 +18,24 @@ async function simulate(numPeople) {
 	neighbors = new Map();
 	nodes = new Map();
 
+	setInterval(() => {
+		const tmp = obj(neighbors);
+		if (
+			object.length === 0 ||
+			JSON.stringify(object[object.length - 1]) != JSON.stringify(tmp)
+		) {
+			object.push(tmp);
+			console.log("list", object.length);
+		}
+	}, 50);
+
 	for (let i = 0; i < numPeople; i++) {
 		let hash = BigInt(genHash());
 		let funcs = generateFuncs(hash);
 
 		neighbors.set(hash, new Set());
 
-		let newGuy = new ChordNode(hash, funcs); //hash, funcs
+		let newGuy = new ChordNode(hash, funcs, opts); //hash, funcs
 		nodes.set(hash, newGuy);
 		if (i == 0) {
 			newGuy.create();
@@ -30,8 +45,7 @@ async function simulate(numPeople) {
 				newGuy.join(connectTo);
 			});
 		}
-		await sleep(200);
-		object.push(obj(neighbors));
+		await sleep(1000);
 		console.log(i);
 	}
 

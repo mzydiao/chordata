@@ -1,7 +1,7 @@
 let m = 64n;
 
 class ChordNode {
-	constructor(hash, funcs) {
+	constructor(hash, funcs, { stabilizeInterval }) {
 		this.own_id = hash;
 		this.successor = null;
 		this.predecessor = null;
@@ -12,6 +12,10 @@ class ChordNode {
 		this.functions = funcs;
 		//includes connect, disconnect, isConnected, hasConnection, send_rpc,
 		//query_successors
+
+		setInterval(() => {
+			this.stabilize();
+		}, stabilizeInterval);
 	}
 
 	// create()
@@ -55,6 +59,7 @@ class ChordNode {
 				type: "GET_PREDECESSOR",
 			})
 			.then((ps) => {
+				if (!ps) return;
 				ps = BigInt(ps);
 				if (
 					(this.own_id < ps && ps < this.successor) ||
@@ -89,7 +94,9 @@ class ChordNode {
 				}
 				resolve_rpc(null);
 			case "GET_PREDECESSOR":
-				resolve_rpc(this.predecessor.toString());
+				resolve_rpc(
+					this.predecessor ? this.predecessor.toString() : null
+				);
 			case "FIND_SUCCESSOR":
 				find_id = BigInt(data.content);
 				find_successor(find_id).then((answer) => {
