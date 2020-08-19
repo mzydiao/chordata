@@ -124,16 +124,19 @@ class ChordNode {
 					this.predecessor = sender;
 				}
 				resolve_rpc(null);
+				break;
 			case "GET_PREDECESSOR":
 				resolve_rpc(
 					this.predecessor ? this.predecessor.toString() : null
 				);
+				break;
 			case "FIND_SUCCESSOR":
 				let find_id = BigInt(data.content);
 				this.find_successor(find_id).then((answer) => {
 					answer = answer.toString();
 					resolve_rpc(answer);
 				});
+				break;
 			default:
 				return;
 		}

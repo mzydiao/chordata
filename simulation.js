@@ -8,8 +8,8 @@ let neighbors;
 let nodes;
 
 const opts = {
-	stabilizeInterval: 100,
-	fixFingersInterval: 100,
+	stabilizeInterval: 1000,
+	fixFingersInterval: 1000,
 };
 
 async function simulate(numPeople) {
@@ -50,11 +50,13 @@ async function simulate(numPeople) {
 				newGuy.join(connectTo);
 			});
 		}
-		await sleep(1000);
+		await sleep(500);
 	}
 
+	await sleep(3000);
+
 	console.log("deleting...");
-	for (let i = 0; i < 1; i++) {
+	for (let i = 0; i < 5; i++) {
 		let h = toDisconnect.pop();
 		console.log(i, h);
 
@@ -66,8 +68,10 @@ async function simulate(numPeople) {
 		nodes.delete(h);
 		neighbors.delete(h);
 
-		await sleep(1000);
+		await sleep(500);
 	}
+
+	await sleep(15000);
 
 	fs.writeFile("data.json", JSON.stringify(object), (err) => {
 		console.error(err);
@@ -119,6 +123,7 @@ function generateFuncs(hash) {
 				reject("could not connect node " + id);
 				return;
 			}
+			// console.log(hash, id);
 
 			neighbors.get(hash).add(id);
 			neighbors.get(id).add(hash);
@@ -146,8 +151,21 @@ function generateFuncs(hash) {
 	};
 	let send_rpc = (id, data) => {
 		return new Promise((resolve, reject) => {
-			if (nodes.has(id)) nodes.get(id).handle_rpc(hash, data, resolve);
-			else reject("could not contact node " + id);
+			setTimeout(() => {
+				if (!nodes.has(id)) {
+					reject("could not contact node " + id);
+					return;
+				}
+				if (!nodes.has(hash)) {
+					reject("sender died" + hash);
+					return;
+				}
+				if (!neighbors.get(hash).has(id)) {
+					reject("not connected to node " + id);
+					return;
+				}
+				nodes.get(id).handle_rpc(hash, data, resolve);
+			}, 100);
 		});
 	};
 	let query_successors = () => {
