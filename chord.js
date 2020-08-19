@@ -74,8 +74,9 @@ class ChordNode {
 					} else if (this.functions.isConnected(ps)) {
 						this.fingers[0] = ps;
 						if (old_successor !== this.predecessor) {
-							this.functions.disconnect(old_successor);
-							//might need to think about this again for fingers
+							if (!this.fingers.includes(old_successor))
+								this.functions.disconnect(old_successor);
+							// might need to think about this again for reverse fingers
 						}
 					}
 				}
@@ -192,19 +193,18 @@ class ChordNode {
 				if (correct_finger === this.own_id) return;
 				if (this.fingers[this.next] != correct_finger) {
 					if (!this.functions.hasConnection(correct_finger)) {
-						this.functions
-							.connect(correct_finger)
-							.then(() => {
-								if (this.fingers[this.next] !== null)
-									return this.functions.disconnect(
-										this.fingers[this.next]
-									);
-								//might need to care about edge case where neg
-								//and pos fingers collide?
-							})
-							.then(() => {
-								this.fingers[this.next] = correct_finger;
-							});
+						this.functions.connect(correct_finger).then(() => {
+							let old_finger = this.fingers[this.next];
+							this.fingers[this.next] = correct_finger;
+							if (
+								old_finger !== null &&
+								!this.fingers.includes(old_finger)
+							) {
+								return this.functions.disconnect(old_finger);
+							}
+							//might need to care about edge case where neg
+							//and pos fingers collide?
+						});
 					} else {
 						this.fingers[this.next] = correct_finger;
 					}
