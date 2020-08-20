@@ -26,5 +26,5 @@ Here, *m* denotes the base-4 logarithm of the key space.
 ## Demo
 
 <center>
-![The graph self-stablizes after the introduction of new peers.](figs/chord-fingers.gif)
+![The graph self-stablizes after the introduction of new peers.](./figs/chord-fingers.gif)
 </center>
