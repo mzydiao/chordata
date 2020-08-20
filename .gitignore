@@ -1,4 +1,4 @@
-.prettierrc
+**/node_modules/**
 *checkpoint.ipynb
 data.json
 chord-fingers-*.png
