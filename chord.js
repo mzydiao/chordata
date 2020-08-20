@@ -1,20 +1,30 @@
+// m stores log4 (max identifier + 1)
 let m = 64n;
 
 class ChordNode {
+	/**
+	 * Creates an instance of ChordNode.
+	 *
+	 * @constructor
+	 * @param {BigInt} hash node identifier of the ChordNode
+	 * @param {object} funcs object containing callback functions `connect`,
+	 * `disconnect`, `isConnected`, `hasConnection`, `send_rpc`,
+	 * `query_successors`
+	 * @param {object} options object containing options for
+	 * `stabilizeInterval` and `fixFingersInterval`
+	 */
 	constructor(hash, funcs, { stabilizeInterval, fixFingersInterval }) {
 		this.own_id = hash;
+		this.functions = funcs;
+
 		this.predecessor = null;
 		this.tempSuccessor = null;
-		//m is the power of 4
-		//keep bigint in mind
-		//encode bigint as hex; decode when handle rpc
-		this.next = 1n;
-		this.functions = funcs;
-		//includes connect, disconnect, isConnected, hasConnection, send_rpc,
-		//query_successors
-
+		// array of m fingers; this.fingers[0] is the successor
 		this.fingers = Array(Number(m)).fill(null);
+		// index of finger to be fixed, start at 1 (0 is the successor)
+		this.next = 1n;
 
+		// set intervals to run stabilize and fixFingers
 		this.stabilizeHandle = setInterval(() => {
 			this.stabilize();
 		}, stabilizeInterval);
@@ -23,82 +33,29 @@ class ChordNode {
 		}, fixFingersInterval);
 	}
 
+	/**
+	 * Destroys ChordNode.
+	 */
 	destroy() {
 		clearInterval(this.stabilizeHandle);
 		clearInterval(this.fixFingersHandle);
 	}
 
-	// create()
-	// this.successor = this.own_id
+	/**
+	 * Creates a new network with this as the first member.
+	 */
 	create() {
-		this.fingers[0] = null; //this.own_id;
+		this.fingers[0] = null; // not necessary
 	}
 
-	// notify(n)
-	// send_rpc(NOTIFY, n) // calls peer.send()
-	notify(id) {
-		this.functions
-			.send_rpc(id, {
-				type: "NOTIFY",
-			})
-			.catch((err) => {
-				console.error("notify", err);
-			}); //?
-	}
-
-	// join(id) // id is guaranteed to be this.successor based on server
-	// this.successor = id
-	// peer.connect(this.successor)
-	// notify(this.successor)
-	join(id) {
-		this.fingers[0] = id;
-		this.functions.connect(this.fingers[0]).then(() => {
-			this.notify(this.fingers[0]);
-		});
-	}
-	// stabilize()
-	// p’ = send_rpc(GET_PREDECESSOR, this.successor)
-	// if this.own_id < p’ < this.successor || (p > s && (p’ > p || p’ < s)):
-	// 	if !peer.hasConnection(p’):
-	// 		peer.connect(p’)
-	// 	else if peer.getConnection(p’).connected == true:
-	// 		old_successor, this.successor = this.successor, p’
-	// peer.disconnect(old_successor)
-	// notify(this.successor)
-	stabilize() {
-		//this.predecessor of this.successor
-		if (this.fingers[0] === null) {
-			return;
-		}
-		this.functions
-			.send_rpc(this.fingers[0], {
-				type: "GET_PREDECESSOR",
-			})
-			.then((ps) => {
-				if (!ps) return;
-				ps = BigInt(ps);
-				if (this.between(this.own_id, ps, this.fingers[0])) {
-					let old_successor = this.fingers[0];
-					if (!this.functions.hasConnection(ps)) {
-						this.functions.connect(ps);
-						this.tempSuccessor = ps;
-					} else if (this.functions.isConnected(ps)) {
-						this.fingers[0] = ps;
-						this.tempSuccessor = null;
-						if (old_successor !== this.predecessor) {
-							if (!this.fingers.includes(old_successor))
-								this.functions.disconnect(old_successor);
-							// might need to think about this again for reverse fingers
-						}
-					}
-				}
-			})
-			.catch((err) => {
-				console.error("stabilize", err);
-			});
-		this.notify(this.fingers[0]);
-	}
-
+	/**
+	 * Checks if node b is between node a and node c (i.e., a -> b -> c).
+	 *
+	 * @param {BigInt} a node identifier a
+	 * @param {BigInt} b node identifier b
+	 * @param {BigInt} c node identifier c
+	 * @returns {boolean} whether or not b is beteen a and c
+	 */
 	between(a, b, c) {
 		if (a < c) {
 			return a < b && b < c;
@@ -106,123 +63,216 @@ class ChordNode {
 		return a < b || b < c;
 	}
 
-	// handle_rpc(type, sender)
-	// switch type:
-	// case NOTIFY:
-	// 		if this.predecessor < sender < this.own_id:
-	// 			this.predecessor = sender
-	// 	case GET_PREDECESSOR:
-	// 		respond_rpc(this.predecessor)
+	/**
+	 * Notifies a node of this node's existence.
+	 *
+	 * @param {BigInt} id identifier of node to be notified
+	 */
+	notify(id) {
+		this.functions
+			.send_rpc(id, {
+				type: "NOTIFY",
+			})
+			.catch((err) => {
+				// if node id can't be notified, do nothing
+				console.error("notify", err);
+			});
+	}
+
+	/**
+	 * Joins an existing network.
+	 *
+	 * @param {BigInt} id identifier of this node's successor in the network
+	 */
+	join(id) {
+		this.fingers[0] = id;
+		this.functions.connect(this.fingers[0]).then(() => {
+			this.notify(this.fingers[0]);
+		}); // TODO: handle error in connect promise?
+	}
+
+	/**
+	 * Runs stabilization algorithm to maintain correct successor.
+	 */
+	stabilize() {
+		// if there is not yet a successor to query, do nothing (e.g. right
+		// after calling create())
+		if (this.fingers[0] === null) return;
+
+		this.functions
+			// ask successor who its predecessor is
+			.send_rpc(this.fingers[0], {
+				type: "GET_PREDECESSOR",
+			})
+			.then((ps) => {
+				// if successor does not have a predecessor, do nothing
+				if (!ps) return;
+
+				// decode ps to get BigInt identifier of successor's
+				// predecessor
+				ps = BigInt(ps);
+				if (this.between(this.own_id, ps, this.fingers[0])) {
+					// if successor's predecessor (ps) is between this node and
+					// the successor, should switch successor to ps
+					let old_successor = this.fingers[0];
+
+					if (!this.functions.hasConnection(ps)) {
+						// if not already connected to ps, attempt connection
+						this.functions.connect(ps);
+						this.tempSuccessor = ps;
+					} else if (this.functions.isConnected(ps)) {
+						// already connected to ps, so set successor to ps and
+						// disconnect from the old successor
+						this.fingers[0] = ps;
+						this.tempSuccessor = null;
+
+						// do not disconnect from a node if it is also the
+						// predecessor, or it is still somewhere else in the
+						// finger table
+						if (
+							old_successor !== this.predecessor &&
+							!this.fingers.includes(old_successor)
+						) {
+							this.functions.disconnect(old_successor);
+							// TODO: might need to think about this again for
+							// reverse fingers
+						}
+					}
+				}
+			})
+			.catch((err) => {
+				// if couldn't get ps from successor, do nothing
+				console.error("stabilize", err);
+			});
+
+		// finally, attempt to notify the successor
+		this.notify(this.fingers[0]);
+	}
+
+	/**
+	 * Respond to RPCs from other nodes.
+	 *
+	 * @param {BigInt} sender identifer of the sender of the RPC
+	 * @param {object} data
+	 * @param {function} resolve_rpc callback to return response to the sender
+	 */
 	handle_rpc(sender, data, resolve_rpc) {
-		//sender is a BigInt
 		switch (data.type) {
 			case "NOTIFY":
-				if (this.fingers[0] === null) {
-					this.fingers[0] = sender;
-				}
+				// after node a calls create(), when the second node b joins,
+				// a.successor is null; b notifies a, and a should set b to be
+				// both predecessor and successor
+				if (this.fingers[0] === null) this.fingers[0] = sender;
+
+				// set sender to be the predecessor if between current
+				// predecessor and this node, or if predecessor has not yet
+				// been set
 				if (
 					this.between(this.predecessor, sender, this.own_id) ||
 					this.predecessor === null
-				) {
+				)
 					this.predecessor = sender;
-				}
+
 				resolve_rpc(null);
 				break;
+
 			case "GET_PREDECESSOR":
 				resolve_rpc(
+					// encode predecessor as string for sending
 					this.predecessor ? this.predecessor.toString() : null
 				);
 				break;
+
 			case "FIND_SUCCESSOR":
+				// data.content contains target identifier as string
 				let find_id = BigInt(data.content);
 				this.find_successor(find_id).then((answer) => {
+					// encode found successor as string for sending
 					answer = answer.toString();
 					resolve_rpc(answer);
-				});
+				}); // TODO: handle error in finding successor?
 				break;
+
 			default:
 				return;
 		}
 	}
-	// peer.on_disconnect(id)
-	// if id == this.predecessor:
-	// 	this.predecessor = null
-	// else if id == this.successor:
-	// 	successor_list = query_server_for_successors(2 minutes) // then:
-	// 	connected = false
-	// 	while !connected: // reattempt current this.successor, then loop list
-	// 		peer.connect(this.successor) // then:
-	// 		success:
-	// 			connected = true
-	// 		failure:
-	// 	this.successor = successor_list.this.next(this.successor)
-	// 	if no this.next this.successor, throw error, break
-	// 	notify(this.successor)
+
+	/**
+	 * Handle the event where a node got disconnected.
+	 *
+	 * @param {BigInt} id identifier of node that got disconnected
+	 */
 	on_disconnect(id) {
-		if (id == this.predecessor) {
-			this.predecessor = null;
-		} else if (id == this.fingers[0]) {
+		if (id == this.predecessor) this.predecessor = null;
+		else if (id == this.fingers[0]) {
+			// if disconnected from successor, call query_successors to obtain
+			// list of potential successors and attempt to connect in order
+
 			if (this.tempSuccessor !== null) {
+				// if disconnected from successor in middle of stabilizing to a
+				// new successor (tempSuccessor), give up on stabilization and
+				// disconnect from tempSuccessor
 				this.functions.disconnect(this.tempSuccessor).catch((err) => {
 					console.error(err);
 				});
 			}
+
 			this.functions.query_successors().then((successorList) => {
+				// index of successor to contact on successorlist
 				let successorIndex = 0;
-				if (this.fingers[0] == null) {
-					throw "no this.fingers[0]";
-				}
-				let connected = false;
 				let attemptConnection = () => {
+					// attempt to make a connection to current successor
 					this.functions
 						.connect(this.fingers[0])
 						.then(() => {
-							connected = true;
+							// if successfully connected, notify successor
+							this.notify(this.fingers[0]);
 						})
 						.catch(() => {
-							//do nothing
+							// if connection failed, advance the successor
+							// index and reattempt connection
 							successorIndex = successorIndex + 1;
-							// 	if no this.next this.successor, throw error, break
 							if (successorIndex >= successorList.length) {
-								throw "no this.fingers[0]"; //deal with this later
+								// if no more successors on the list, throw an
+								// error; TODO: deal with this
+								throw "no this.fingers[0]";
 							}
 							this.fingers[0] = successorList[successorIndex];
 							attemptConnection();
 						});
 				};
-
 				attemptConnection();
 			});
 		}
-		this.notify(this.fingers[0]);
 	}
-	// fix_fingers(this.next)
-	// this.next = this.next + 1
-	// if this.next > m:
-	// 	this.next = 1
-	// correct_finger = find_successor(this.own_id + 4^(this.next-1))
-	// if fingers[this.next] != correct_finger:
-	// 	if !peer.hasConnection(correct_finger):
-	// 		peer.connect(correct_finger)
-	// 		peer.disconnect(fingers[this.next])
-	// 	fingers[this.next] = correct_finger
-	// initialize this.next to 1n
+
+	/**
+	 * Runs fixFingers algorithm to maintain correct finger table.
+	 */
 	fix_fingers() {
+		// fix the next finger; restart next at 1 (not 0) because
+		// this.fingers[0] is the successor, which is maintained by stabilize
 		this.next = this.next + 1n;
 		if (this.next >= m) {
 			this.next = 1n;
 		}
+
+		// calculate the id and find its successor
 		this.find_successor((this.own_id + 4n ** this.next) % 4n ** m)
 			.then((correct_finger) => {
-				correct_finger = BigInt(correct_finger);
+				// no point in having this node as its own finger
 				if (correct_finger === this.own_id) return;
 
 				if (this.fingers[this.next] != correct_finger) {
+					// if the correct finger is different from the stored
+					// identifier in the finger table, update the finger table
 					let old_finger = this.fingers[this.next];
 					this.fingers[this.next] = correct_finger;
 
-					// might need to care about edge case where neg
-					// and pos fingers collide?
+					// do not disconnect from a finger if it is still somewhere
+					// else in the table; TODO: might need to care about edge
+					// case where neg and pos fingers collide?
 					if (
 						old_finger !== null &&
 						!this.fingers.includes(old_finger)
@@ -232,52 +282,76 @@ class ChordNode {
 						});
 					}
 
+					// if not already connected to the new finger, attempt
+					// connection
 					if (!this.functions.hasConnection(correct_finger))
-						this.functions.connect(correct_finger).then(() => {});
+						this.functions.connect(correct_finger).catch((err) => {
+							console.error(err);
+						});
 				} else if (!this.functions.hasConnection(correct_finger)) {
+					// if the finger table does not have to be changed, but for
+					// some reason not currently connected to the correct
+					// finger, attempt connection
 					this.functions.connect(correct_finger).catch((err) => {
 						console.error(err);
 					});
 				}
 			})
 			.catch((error) => {
+				// if successor couldn't be found, this finger can't be fixed
+				// at the moment, so do nothing
 				console.error(error);
 			});
 	}
-	// find_successor(id)
-	// if n < id <= this.successor:
-	// 	return this.successor
-	// else:
-	// 	n’ = closest_preceding_node(id)
-	// return send_rpc(FIND_SUCCESSOR, n’, id)
 
+	/**
+	 * Finds the successor of a given identifier (i.e., the smallest node in
+	 * the network whose identifier >= the target)
+	 *
+	 * @param {BigInt} id identifier to find the successor of
+	 * @returns {Promise<BigInt>} promise that resolves with identifier of
+	 * successor
+	 */
 	find_successor(id) {
 		return new Promise((resolve, reject) => {
 			if (this.fingers[0] === null) {
-				reject();
+				reject("no successor");
 				return;
 			}
+
 			if (this.between(this.own_id, id, this.fingers[0] + 1n))
+				// if id is between this node and the successor, then the
+				// successor must be the successor of id, since there are no
+				// nodes between this node and the successor
 				resolve(this.fingers[0]);
 			else {
+				// find the largest nodes in the finger table that precede id,
+				// in descending order (contact the largest/best finger first)
 				const consultList = this.closest_preceding_node(id);
 				const ask = () => {
 					if (consultList.length === 0) {
+						// if there are no more fingers in the list, give up
 						reject("could not contact preceding nodes");
 						return;
 					}
 
+					// get first finger in the list to contact
 					const consult = consultList.shift();
 					this.functions
 						.send_rpc(consult, {
 							type: "FIND_SUCCESSOR",
+							// encode target id as string
 							content: id.toString(),
 						})
 						.then((p) => {
+							// if consult successfully found the successor,
+							// resolve with the returned successor
 							p = BigInt(p);
 							resolve(p);
 						})
 						.catch((err) => {
+							// could not contact consult, so retry with next
+							// finger in consultList
 							console.error("find successor", err);
 							ask();
 						});
@@ -287,16 +361,21 @@ class ChordNode {
 			}
 		});
 	}
-	// closest_preceding_node(id)
-	// for i = m downto 1:
-	// 	if this.own_id < finger[i] < id:
-	// 		return finger[i]
-	// return this.own_id
+
+	/**
+	 * Finds the closest preceding nodes in the finger table of a given
+	 * identifier, in descending order, starting from the closest preceding
+	 * node.
+	 *
+	 * @param {BigInt} id identifer to find the closest preceding nodes of
+	 * @returns {Array<BigInt>} list of closest preceding nodes in finger table
+	 */
 	closest_preceding_node(id) {
 		const consult = [];
 		for (let i = Number(m) - 1; i >= 0; i--) {
+			// starting from the largest finger, add fingers that are between
+			// this node and id
 			if (this.fingers[i] === null) continue;
-
 			if (this.between(this.own_id, this.fingers[i], id))
 				consult.push(this.fingers[i]);
 		}
