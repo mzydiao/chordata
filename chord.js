@@ -1,12 +1,14 @@
+const jsbi = require("jsbi");
+
 // m stores log4 (max identifier + 1)
-let m = 64n;
+let m = jsbi.BigInt(64);
 
 class ChordNode {
     /**
      * Creates an instance of ChordNode.
      *
      * @constructor
-     * @param {BigInt} hash node identifier of the ChordNode
+     * @param {String} hash node identifier of the ChordNode in hexadecimal
      * @param {object} funcs object containing callback functions `connect`,
      * `disconnect`, `isConnected`, `hasConnection`, `send_rpc`,
      * `query_successors`
@@ -19,10 +21,11 @@ class ChordNode {
 
         this.predecessor = null;
         this.tempSuccessor = null;
-        // array of m fingers; this.fingers[0] is the successor
+        // array of m fingers stored as hex strings; this.fingers[0] is the
+        // successor
         this.fingers = Array(Number(m)).fill(null);
         // index of finger to be fixed, start at 1 (0 is the successor)
-        this.next = 1n;
+        this.next = 1;
 
         // set intervals to run stabilize and fixFingers
         this.stabilizeHandle = setInterval(() => {
@@ -51,22 +54,25 @@ class ChordNode {
     /**
      * Checks if node b is between node a and node c (i.e., a -> b -> c).
      *
-     * @param {BigInt} a node identifier a
-     * @param {BigInt} b node identifier b
-     * @param {BigInt} c node identifier c
+     * @param {String} a node identifier a, hex
+     * @param {String} b node identifier b, hex
+     * @param {String} c node identifier c, hex
      * @returns {boolean} whether or not b is beteen a and c
      */
     between(a, b, c) {
-        if (a < c) {
-            return a < b && b < c;
+        a = jsbi.BigInt(`0x${a}`);
+        b = jsbi.BigInt(`0x${b}`);
+        c = jsbi.BigInt(`0x${c}`);
+        if (jsbi.lessThan(a, c)) {
+            return jsbi.lessThan(a, b) && jsbi.lessThan(b, c);
         }
-        return a < b || b < c;
+        return jsbi.lessThan(a, b) || jsbi.lessThan(b, c);
     }
 
     /**
      * Notifies a node of this node's existence.
      *
-     * @param {BigInt} id identifier of node to be notified
+     * @param {String} id identifier of node to be notified, hex string
      */
     notify(id) {
         this.functions
@@ -82,7 +88,8 @@ class ChordNode {
     /**
      * Joins an existing network.
      *
-     * @param {BigInt} id identifier of this node's successor in the network
+     * @param {String} id identifier of this node's successor in the network,
+     * hex string
      */
     join(id) {
         this.fingers[0] = id;
@@ -108,9 +115,6 @@ class ChordNode {
                 // if successor does not have a predecessor, do nothing
                 if (!ps) return;
 
-                // decode ps to get BigInt identifier of successor's
-                // predecessor
-                ps = BigInt(ps);
                 if (this.between(this.own_id, ps, this.fingers[0])) {
                     // if successor's predecessor (ps) is between this node and
                     // the successor, should switch successor to ps
@@ -152,7 +156,7 @@ class ChordNode {
     /**
      * Respond to RPCs from other nodes.
      *
-     * @param {BigInt} sender identifer of the sender of the RPC
+     * @param {String} sender identifer of the sender of the RPC, hex
      * @param {object} data
      * @param {function} resolve_rpc callback to return response to the sender
      */
@@ -168,8 +172,8 @@ class ChordNode {
                 // predecessor and this node, or if predecessor has not yet
                 // been set
                 if (
-                    this.between(this.predecessor, sender, this.own_id) ||
-                    this.predecessor === null
+                    this.predecessor === null ||
+                    this.between(this.predecessor, sender, this.own_id)
                 )
                     this.predecessor = sender;
 
@@ -177,18 +181,12 @@ class ChordNode {
                 break;
 
             case "GET_PREDECESSOR":
-                resolve_rpc(
-                    // encode predecessor as string for sending
-                    this.predecessor ? this.predecessor.toString() : null
-                );
+                resolve_rpc(this.predecessor);
                 break;
 
             case "FIND_SUCCESSOR":
-                // data.content contains target identifier as string
-                let find_id = BigInt(data.content);
-                this.find_successor(find_id).then((answer) => {
-                    // encode found successor as string for sending
-                    answer = answer.toString();
+                // data.content contains target identifier as hex string
+                this.find_successor(data.content).then((answer) => {
                     resolve_rpc(answer);
                 }); // TODO: handle error in finding successor?
                 break;
@@ -201,7 +199,7 @@ class ChordNode {
     /**
      * Handle the event where a node got disconnected.
      *
-     * @param {BigInt} id identifier of node that got disconnected
+     * @param {String} id identifier of node that got disconnected, hex
      */
     on_disconnect(id) {
         if (id == this.predecessor) this.predecessor = null;
@@ -253,13 +251,20 @@ class ChordNode {
     fix_fingers() {
         // fix the next finger; restart next at 1 (not 0) because
         // this.fingers[0] is the successor, which is maintained by stabilize
-        this.next = this.next + 1n;
-        if (this.next >= m) {
-            this.next = 1n;
+        this.next = this.next + 1;
+        if (this.next >= Number(m)) {
+            this.next = 1;
         }
 
         // calculate the id and find its successor
-        this.find_successor((this.own_id + 4n ** this.next) % 4n ** m)
+        let id = jsbi.remainder(
+            jsbi.add(
+                jsbi.BigInt(`0x${this.own_id}`),
+                jsbi.exponentiate(jsbi.BigInt(4), jsbi.BigInt(this.next))
+            ),
+            jsbi.exponentiate(jsbi.BigInt(4), m)
+        );
+        this.find_successor(id.toString(16))
             .then((correct_finger) => {
                 // no point in having this node as its own finger
                 if (correct_finger === this.own_id) return;
@@ -308,9 +313,9 @@ class ChordNode {
      * Finds the successor of a given identifier (i.e., the smallest node in
      * the network whose identifier >= the target)
      *
-     * @param {BigInt} id identifier to find the successor of
-     * @returns {Promise<BigInt>} promise that resolves with identifier of
-     * successor
+     * @param {String} id identifier to find the successor of, hex
+     * @returns {Promise<String>} promise that resolves with identifier of
+     * successor, hex
      */
     find_successor(id) {
         return new Promise((resolve, reject) => {
@@ -319,7 +324,10 @@ class ChordNode {
                 return;
             }
 
-            if (this.between(this.own_id, id, this.fingers[0] + 1n))
+            if (
+                this.between(this.own_id, id, this.fingers[0]) ||
+                id === this.fingers[0]
+            )
                 // if id is between this node and the successor, then the
                 // successor must be the successor of id, since there are no
                 // nodes between this node and the successor
@@ -346,7 +354,6 @@ class ChordNode {
                         .then((p) => {
                             // if consult successfully found the successor,
                             // resolve with the returned successor
-                            p = BigInt(p);
                             resolve(p);
                         })
                         .catch((err) => {
@@ -367,8 +374,9 @@ class ChordNode {
      * identifier, in descending order, starting from the closest preceding
      * node.
      *
-     * @param {BigInt} id identifer to find the closest preceding nodes of
-     * @returns {Array<BigInt>} list of closest preceding nodes in finger table
+     * @param {String} id identifer to find the closest preceding nodes of, hex
+     * @returns {Array<String>} list of closest preceding nodes in finger
+     * table, hex
      */
     closest_preceding_node(id) {
         const consult = [];
@@ -383,7 +391,7 @@ class ChordNode {
     }
 }
 
-module.exports = function (bits = 64n) {
-    m = BigInt(bits);
+module.exports = function (bits = 64) {
+    m = jsbi.BigInt(bits);
     return ChordNode;
 };

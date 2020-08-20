@@ -1,0 +1,14 @@
+{
+    "name": "chordata",
+    "version": "0.1.0",
+    "description": "a protocol for bidirectional peer-to-peer networking based on the Chord algorithm",
+    "main": "chord.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "jsbi": "^3.1.3"
+    }
+}
