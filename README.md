@@ -25,6 +25,6 @@ Here, *m* denotes the base-4 logarithm of the key space.
 
 ## Demo
 
-<center>
+The graph self-stablizes after the introduction of new peers. Here are the results of a stabilization test in which new peers successively joined the network after one another:
 ![The graph self-stablizes after the introduction of new peers.](./figs/chord-fingers.gif)
-</center>
+
