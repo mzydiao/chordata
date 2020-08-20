@@ -1,6 +1,5 @@
 .prettierrc
 *checkpoint.ipynb
 data.json
-tikz.py
 chord-fingers-*.png
 .DS_Store
