@@ -4,6 +4,7 @@ class ChordNode {
 	constructor(hash, funcs, { stabilizeInterval, fixFingersInterval }) {
 		this.own_id = hash;
 		this.predecessor = null;
+		this.tempSuccessor = null;
 		//m is the power of 4
 		//keep bigint in mind
 		//encode bigint as hex; decode when handle rpc
@@ -80,8 +81,10 @@ class ChordNode {
 					let old_successor = this.fingers[0];
 					if (!this.functions.hasConnection(ps)) {
 						this.functions.connect(ps);
+						this.tempSuccessor = ps;
 					} else if (this.functions.isConnected(ps)) {
 						this.fingers[0] = ps;
+						this.tempSuccessor = null;
 						if (old_successor !== this.predecessor) {
 							if (!this.fingers.includes(old_successor))
 								this.functions.disconnect(old_successor);
@@ -159,8 +162,12 @@ class ChordNode {
 		if (id == this.predecessor) {
 			this.predecessor = null;
 		} else if (id == this.fingers[0]) {
+			if (this.tempSuccessor !== null) {
+				this.functions.disconnect(this.tempSuccessor).catch((err) => {
+					console.error(err);
+				});
+			}
 			this.functions.query_successors().then((successorList) => {
-				console.log(successorList);
 				let successorIndex = 0;
 				if (this.fingers[0] == null) {
 					throw "no this.fingers[0]";

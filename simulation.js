@@ -50,10 +50,10 @@ async function simulate(numPeople) {
 				newGuy.join(connectTo);
 			});
 		}
-		await sleep(500);
+		// await sleep(100);
 	}
 
-	await sleep(3000);
+	await sleep(5000);
 
 	console.log("deleting...");
 	for (let i = 0; i < 5; i++) {
@@ -68,10 +68,10 @@ async function simulate(numPeople) {
 		nodes.delete(h);
 		neighbors.delete(h);
 
-		await sleep(500);
+		// await sleep(100);
 	}
 
-	await sleep(15000);
+	await sleep(35000);
 
 	fs.writeFile("data.json", JSON.stringify(object), (err) => {
 		console.error(err);
@@ -123,7 +123,6 @@ function generateFuncs(hash) {
 				reject("could not connect node " + id);
 				return;
 			}
-			// console.log(hash, id);
 
 			neighbors.get(hash).add(id);
 			neighbors.get(id).add(hash);
