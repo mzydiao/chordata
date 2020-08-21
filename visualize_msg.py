@@ -9,11 +9,13 @@ import matplotlib.pyplot as plt
 # generate plots on ax given an adjacency dictionary
 
 class MessageGraph:
-    def __init__(self, all_nodes, indices):
+    def __init__(self, all_nodes, indices, lim):
         self.all_nodes = all_nodes
         self.indices = indices
+        self.lim = lim
     
     def get_deg(self, node):
+        node = int(node)
         all_nodes, indices = self.all_nodes, self.indices
         if all_nodes is None:
             # extract a sorted list of all nodes
@@ -26,6 +28,7 @@ class MessageGraph:
         return deg
         
     def plot(self, ax, adj, msgs, holds):
+        lim = self.lim
         ax.clear()
         ax.axis('off')
         ax.set_xlim(left=-lim, right=lim)
@@ -35,26 +38,16 @@ class MessageGraph:
         self.plot_holds(holds, ax)
 
     def plot_msg(self, msgs, ax):
-        all_nodes, indices = self.all_nodes, self.indices
-        if all_nodes is None:
-            # extract a sorted list of all nodes
-            all_nodes = {int(k) for k in adj}
-            all_nodes = sorted(all_nodes)
-
         for a, b in msgs:
-            if indices is not None:
-                theta1, theta2 = indices[a], indices[b]
-            else:
-                theta1, theta2 = all_nodes.index(a), all_nodes.index(b)
-            degs = [theta1/(len(all_nodes)) * 2 * np.pi,
-                    theta2/(len(all_nodes)) * 2 * np.pi]
+            print(a, b)
+            degs = list(map(self.get_deg, (a, b)))
 
             # connect a, b
-            ax.plot(np.cos(degs), np.sin(degs), 'tab:blue')
+            ax.plot(np.cos(degs), np.sin(degs), 'tab:green')
 
     def plot_holds(self, holds, ax):
         degs = list(map(self.get_deg, holds))
-        ax.scatter(np.cos(degs), np.sin(degs))
+        ax.scatter(np.cos(degs), np.sin(degs), zorder=10)
         
 
     def plot_adj(self, adj, ax):
@@ -77,7 +70,8 @@ class MessageGraph:
             deg = self.get_deg(node)
 
             # calculate coordinate given degree
-            c, s = np.cos(deg)*1.1, np.sin(deg)*1.1
+            scale = 1.25
+            c, s = np.cos(deg)*scale, np.sin(deg)*scale
 
             # label the coordinate
             ax.text(c, s, node,
@@ -98,8 +92,10 @@ if __name__ == '__main__':
 
     indices = {node: i for i, node in enumerate(all_nodes)}
 
-    graph = MessageGraph(all_nodes, indices)
     lim = 1.5
+
+    graph = MessageGraph(all_nodes, indices, lim)
+
     for i, t in enumerate(snapshots):
         # snapshots: adj, msgs, holders
         adj = t['adj']

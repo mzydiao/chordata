@@ -1,5 +1,5 @@
 **/node_modules/**
 *checkpoint.ipynb
-data.json
+*.json
 chord-fingers-*.png
 .DS_Store
