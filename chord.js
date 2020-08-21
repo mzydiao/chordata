@@ -1,7 +1,23 @@
 const jsbi = require("jsbi");
+const SortedList = require("sortedlist");
 
 // m stores log4 (max identifier + 1)
 let m = jsbi.BigInt(64);
+
+function createSortedList(initial = []) {
+    return SortedList.create(
+        {
+            compare: (a, b) => {
+                a = jsbi.BigInt(`0x${a}`);
+                b = jsbi.BigInt(`0x${b}`);
+                if (jsbi.lessThan(a, b)) return -1;
+                else if (jsbi.greaterThan(a, b)) return 1;
+                return 0;
+            },
+        },
+        initial
+    );
+}
 
 class ChordNode {
     /**
@@ -15,7 +31,11 @@ class ChordNode {
      * @param {object} options object containing options for
      * `stabilizeInterval` and `fixFingersInterval`
      */
-    constructor(hash, funcs, { stabilizeInterval, fixFingersInterval }) {
+    constructor(
+        hash,
+        funcs,
+        { stabilizeInterval, fixFingersInterval, trackNodeList }
+    ) {
         this.own_id = hash;
         this.functions = funcs;
 
@@ -34,6 +54,11 @@ class ChordNode {
         this.fixFingersHandle = setInterval(() => {
             this.fix_fingers();
         }, fixFingersInterval);
+
+        // maintain list of all nodes in chord? used for information purposes,
+        // not for actual chord maintenance
+        this.trackNodeList = trackNodeList;
+        this.nodeList = null;
     }
 
     /**
@@ -49,6 +74,9 @@ class ChordNode {
      */
     create() {
         this.fingers[0] = null; // not necessary
+        if (this.trackNodeList) {
+            this.nodeList = createSortedList([this.own_id]);
+        }
     }
 
     /**
@@ -75,14 +103,18 @@ class ChordNode {
      * @param {String} id identifier of node to be notified, hex string
      */
     notify(id) {
-        this.functions
-            .send_rpc(id, {
-                type: "NOTIFY",
-            })
-            .catch((err) => {
-                // if node id can't be notified, do nothing
-                console.error("notify", err);
-            });
+        let message = {
+            type: "NOTIFY",
+        };
+        if (this.trackNodeList && this.nodeList !== null)
+            // don't send nodeList until node list is non-null; wait until
+            // notified by predecessor
+            message.nodeList = this.nodeList;
+
+        this.functions.send_rpc(id, message).catch((err) => {
+            // if node id can't be notified, do nothing
+            console.error("notify", err);
+        });
     }
 
     /**
@@ -177,6 +209,13 @@ class ChordNode {
                 )
                     this.predecessor = sender;
 
+                if (
+                    this.predecessor === sender &&
+                    this.trackNodeList &&
+                    data.nodeList
+                )
+                    this.updateNodeList(createSortedList(data.nodeList));
+
                 resolve_rpc(null);
                 break;
 
@@ -194,6 +233,28 @@ class ChordNode {
             default:
                 return;
         }
+    }
+
+    /**
+     * Updates the node list if trackNodeList is true.
+     *
+     * @param {SortedList} list updated node list from predecessor
+     */
+    updateNodeList(list) {
+        if (!list.includes(this.predecessor))
+            throw (
+                "new node list does not include predecessor " + this.predecessor
+            );
+        let ownIndex;
+        if (!list.includes(this.own_id)) ownIndex = list.insertOne(this.own_id);
+        else ownIndex = list.bsearch(this.own_id);
+        let predIndex = list.bsearch(this.predecessor);
+
+        // remove any values between predecessor and this node in the list
+        for (let i = predIndex + 1; i < ownIndex; i++) {
+            list.remove(i);
+        }
+        this.nodeList = list;
     }
 
     /**
@@ -221,6 +282,9 @@ class ChordNode {
                     // no successors, so set successor to null to enable
                     // re-establishment of graph
                     this.fingers[0] = null;
+                    if (this.trackNodeList)
+                        // reset node list to this node only
+                        this.nodeList = createSortedList([this.own_id]);
                     return;
                 }
 
