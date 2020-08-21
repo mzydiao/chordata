@@ -472,7 +472,7 @@ class ChordNode {
 
     /**
      * Sends data to the rest of the graph.
-     * 
+     *
      * @param {object} data data to broadcast to the rest of the graph
      */
     broadcast(data) {
@@ -538,19 +538,21 @@ class ChordNode {
                 return;
             }
 
-            const messageIntervalHandle = setInterval(() => {
+            const sendMessage = () => {
                 // do some stuff
                 // send the message somehow
-                log("sending message...");
                 this.functions.sendMessage(nodeId, data);
-            }, this.messageResendInterval);
+            };
+            const messageIntervalHandle = setInterval(
+                sendMessage,
+                this.messageResendInterval
+            );
+            sendMessage();
 
             let resolutionHandler = () => {
-                log("message resolved");
                 clearInterval(messageIntervalHandle);
                 resolve();
             };
-
             this.tracker.sentMessage(
                 originator,
                 msgId,
@@ -566,8 +568,6 @@ class ChordNode {
      * @param {object} data
      */
     receive(sender, data) {
-        log(JSON.stringify(data));
-
         // want to handle receipts but also messages that are supposed to be relayed
         let originator = data.originator;
         let msgId = data.id;
@@ -582,7 +582,6 @@ class ChordNode {
                 break;
             case "PACKET":
                 let ret = this.tracker.receiveMessage(originator, msgId);
-
                 let receiptPacket = {
                     type: "RECEIPT",
                     originator: originator,
