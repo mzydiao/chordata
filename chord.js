@@ -1,5 +1,6 @@
 const jsbi = require("jsbi");
 const SortedList = require("sortedlist");
+const MessageTracker = require("./messageTracker");
 
 // m stores log4 (max identifier + 1)
 let m = jsbi.BigInt(64);
@@ -59,12 +60,8 @@ class ChordNode {
         // not for actual chord maintenance
         this.trackNodeList = trackNodeList;
         this.nodeList = null;
-        // key: originator's hash.
-        // val: object containing:
-        // ---- bound. (index for which all < i are present)
-        // ---- buffer. (messages present that are >= i)
-        // ---- receipts. Map: id (index) -> Map: node id -> object containing handler and received bool
-        this.tracker = new Map();
+
+        this.tracker = new MessageTracker();
     }
 
     /**
@@ -467,72 +464,56 @@ class ChordNode {
         return consult;
     }
 
-    addOrigToTracker = (orig) => {
-        let trackObject = new Map();
-        trackObject.set(index, 0);
-        trackObject.set(buffer, []);
-        trackObject.set(receipts, new Map());
-
-        this.tracker.set(orig, trackObject);
-        return;
-    };
+    broadcast(data) {
+        // TODO
+    }
 
     /**
-     * keep broadcasting to fingers who haven't seen until ack
+     * keep broadcasting to fingers who haven't seen until receipt
      *
-     * @param {object} data
-     * - visited: list of visited nodes
-     *   (don't send to any of these nodes)
-     * - sender: original sender of message
-     * - index: message id
-     *   (ignore packet if already has been seen)
-     * - payload: the rest of the data
+     * @param {object} data data to send
+     * @returns {Promise} resolves when all adjacent nodes have sent receipt
      */
-    broadcast(data) {
-        // query server for neighbors
+    relay(data) {
+        // query for neighbors
         let neighbors = this.functions.getNeighbors();
 
         let originator = data.originator;
-        let id = data.id;
+        let msgId = data.id;
 
-        if (originator === undefined || id === undefined) {
-            console.log("broadcast: originator or id is undefined!");
+        if (originator === undefined || msgId === undefined) {
+            console.log("broadcast: originator or msgId is undefined!");
         }
 
-        for (let neigh in neighbors) {
-            // check if neighbor already has it
-            if (!this.tracker.has(originator)) {
-                this.addOrigToTracker(originator);
-            }
-            if (
-                this.tracker.get(originator).receipts.has(neigh) &&
-                this.tracker.get(originator).receipts.get(neigh).received
-            ) {
-                continue;
-            }
-            this.sendToNode(neigh, data);
+        let promises = [];
+        for (let neigh of neighbors) {
+            if (this.tracker.hasReceipt(originator, msgId, neigh)) continue;
+
+            promises.push(this.sendToNode(neigh, data));
         }
+
+        return Promise.all(promises);
     }
 
     /**
      * keep trying to send to a certain peer until you have a receipt.
+     *
      * @param {String} nodeId
      * @param {object} data
+     * @returns {Promise} resolves when node nodeId returns receipt
      */
     sendToNode(nodeId, data) {
-        // additional arguments: timeout, waiting period before sending another copy
-        // want to keep sending until self.tracker.get(OG).received.get(index).contains(nodeId)
-        // resolve when you get receipt
+        // TODO: additional arguments: timeout, waiting period before sending another copy
         return new Promise((resolve, reject) => {
             let originator = data.originator;
-            let id = data.id;
+            let msgId = data.id;
 
-            if (originator === undefined || id === undefined) {
-                reject("original or index not present in data");
+            if (originator === undefined || msgId === undefined) {
+                reject("original or msgId not present in data");
                 return;
             }
 
-            if (this.tracker.get(originator).received.get(id).has(nodeId)) {
+            if (this.tracker.hasReceipt(originator, msgId, nodeId)) {
                 reject("already received!");
                 return;
             }
@@ -540,26 +521,22 @@ class ChordNode {
             const messageIntervalHandle = setInterval(() => {
                 // do some stuff
                 // send the message somehow
+                log("sending message...");
                 this.functions.sendMessage(nodeId, data);
             }, this.messageResendInterval);
 
             let resolutionHandler = () => {
+                log("message resolved");
                 clearInterval(messageIntervalHandle);
-
-                this.tracker
-                    .get(originator)
-                    .receipts.get(id)
-                    .get(nodeId)
-                    .delete(handler);
-
                 resolve();
             };
 
-            this.tracker
-                .get(originator)
-                .receipts.get(id)
-                .get(nodeId)
-                .set(handler, resolutionHandler);
+            this.tracker.sentMessage(
+                originator,
+                msgId,
+                nodeId,
+                resolutionHandler
+            );
         });
     }
 
@@ -568,96 +545,43 @@ class ChordNode {
      * if not seen before, update buffer and keep trying to send to a individual peer until receipt.
      * @param {object} data
      */
-    receive(data) {
+    receive(sender, data) {
+        log(JSON.stringify(data));
+
         // want to handle receipts but also messages that are supposed to be relayed
         let originator = data.originator;
-        let sender = data.sender;
-        let id = data.id;
+        let msgId = data.id;
 
-        if (
-            originator === undefined ||
-            sender === undefined ||
-            id === undefined
-        ) {
+        if (originator === undefined || msgId === undefined) {
             return;
         }
 
         switch (data.type) {
             case "RECEIPT":
-                if (!this.tracker.has(originator)) {
-                    self.addOrigToTracker(originator);
-                }
-                if (!this.tracker.get(originator).get(receipts).has(id)) {
-                    let trackerMap = new Map();
-                    trackerMap.set(received, true);
-                    this.tracker
-                        .get(originator)
-                        .get(received)
-                        .set(id, trackerMap);
-                }
-                if (
-                    !this.tracker
-                        .get(originator)
-                        .get(receipts)
-                        .get(id)
-                        .get(received)
-                ) {
-                    this.tracker
-                        .get(originator)
-                        .get(receipts)
-                        .get(id)
-                        .set(received, true);
-                    let handler = this.tracker
-                        .get(originator)
-                        .get(receipts)
-                        .get(id)
-                        .get(handler);
-                    handler();
-                }
+                this.tracker.handleReceipt(originator, msgId, sender);
                 break;
             case "PACKET":
-                // check if have seen before; if yes, send a receipt back to original sender
-                if (!this.tracker.has(originator)) {
-                    self.addOrigToTracker(originator);
-                }
-                let trackerOriginator = this.tracker.get(originator);
+                let ret = this.tracker.receiveMessage(originator, msgId);
 
-                if (
-                    id < trackerOriginator.index ||
-                    trackerOriginator.buffer.has(id)
-                ) {
-                    return;
-                }
+                let receiptPacket = {
+                    type: "RECEIPT",
+                    originator: originator,
+                    msgId: msgId,
+                };
+                if (ret) {
+                    // broadcast data and send receipts to neighbors
+                    let dataPacket = { ...data };
+                    dataPacket[sender] = this.own_id;
+                    this.relay(dataPacket);
 
-                // if have not seen before, update buffer and index, broadcast packet
-                if (id == trackerOriginator.index) {
-                    // message arrived in order
-                    trackerOriginator.index++;
+                    let neighbors = this.functions.getNeighbors();
+                    for (let neigh of neighbors)
+                        this.functions.sendMessage(neigh, receiptPacket);
 
-                    // if caught up to buffered messages, empty buffer in order
-                    while (
-                        trackerOriginator.index == trackerOriginator.buffer[0]
-                    ) {
-                        trackerOriginator.buffer.shift();
-                        trackerOriginator.index++;
-                    }
+                    // TODO: emit an event
                 } else {
-                    // message arrived out of order
-                    trackerOriginator.buffer.push(id);
-                    trackerOriginator.buffer.sort((a, b) => a - b);
+                    this.functions.sendMessage(sender, receiptPacket);
                 }
-
-                // broadcast data and send receipts to neighbors
-
-                let dataPacket = { ...data };
-                dataPacket[sender] = this.own_id;
-                self.broadcast(dataPacket);
-
-                let receiptPacket = { ...data };
-                receiptPacket[sender] = this.own_id;
-                receiptPacket[type] = "RECEIPT";
-                self.broadcast(receiptPacket);
-
                 break;
             default:
                 return;
