@@ -34,6 +34,9 @@ class MessageTracker {
         // ---- buffer. (messages present that are >= i)
         // ---- messages. Map: id (index) -> Message
         this.tracker = new Map();
+        // "originator,msgId" -> Message
+        this.messages = new Map();
+        this.nextSendId = 0;
     }
 
     /**
@@ -45,7 +48,6 @@ class MessageTracker {
         let trackObject = {
             index: 0,
             buffer: [],
-            messages: new Map(),
         };
         this.tracker.set(orig, trackObject);
     }
@@ -58,10 +60,7 @@ class MessageTracker {
     }
 
     hasMessage(originator, msgId) {
-        return (
-            this.tracker.has(originator) &&
-            this.tracker.get(originator).messages.has(msgId)
-        );
+        return this.messages.has(`${originator},${msgId}`);
     }
 
     /**
@@ -72,12 +71,14 @@ class MessageTracker {
      * @returns {Message} message object
      */
     getMessage(originator, msgId) {
-        if (!this.tracker.has(originator)) this.addOrigToTracker();
-        if (!this.tracker.get(originator).messages.has(msgId))
-            this.tracker
-                .get(originator)
-                .messages.set(msgId, new Message(originator, msgId));
-        return this.tracker.get(originator).messages.get(msgId);
+        return this.messages.get(`${originator},${msgId}`);
+    }
+
+    createMessage(originator, msgId) {
+        this.messages.set(
+            `${originator},${msgId}`,
+            new Message(originator, msgId)
+        );
     }
 
     hasReceipt(originator, msgId, node) {
@@ -88,12 +89,15 @@ class MessageTracker {
     }
 
     sentMessage(originator, msgId, node, callback) {
+        if (!this.hasMessage(originator, msgId))
+            this.createMessage(originator, msgId);
         this.getMessage(originator, msgId).setResolutionHandler(node, callback);
     }
 
     handleReceipt(originator, msgId, node) {
         if (this.hasMessage(originator, msgId))
             this.getMessage(originator, msgId).resolveHandler(node);
+        else this.createMessage(originator, msgId);
         this.getMessage(originator, msgId).setReceipt(node);
     }
 
@@ -107,7 +111,7 @@ class MessageTracker {
 
         if (
             msgId < trackerOriginator.index ||
-            trackerOriginator.buffer.has(msgId)
+            trackerOriginator.buffer.includes(msgId)
         ) {
             return false;
         }
@@ -131,3 +135,5 @@ class MessageTracker {
         return true;
     }
 }
+
+module.exports = MessageTracker;

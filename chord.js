@@ -35,7 +35,12 @@ class ChordNode {
     constructor(
         hash,
         funcs,
-        { stabilizeInterval, fixFingersInterval, trackNodeList }
+        {
+            stabilizeInterval,
+            fixFingersInterval,
+            trackNodeList,
+            messageResendInterval = 1000,
+        }
     ) {
         this.own_id = hash;
         this.functions = funcs;
@@ -62,6 +67,7 @@ class ChordNode {
         this.nodeList = null;
 
         this.tracker = new MessageTracker();
+        this.messageResendInterval = messageResendInterval;
     }
 
     /**
@@ -464,8 +470,20 @@ class ChordNode {
         return consult;
     }
 
+    /**
+     * Sends data to the rest of the graph.
+     * 
+     * @param {object} data data to broadcast to the rest of the graph
+     */
     broadcast(data) {
-        // TODO
+        let packet = {
+            originator: this.own_id,
+            id: this.tracker.nextSendId,
+            type: "PACKET",
+            content: data,
+        };
+        this.tracker.nextSendId++;
+        this.relay(packet);
     }
 
     /**
@@ -487,7 +505,9 @@ class ChordNode {
 
         let promises = [];
         for (let neigh of neighbors) {
-            if (this.tracker.hasReceipt(originator, msgId, neigh)) continue;
+            if (this.tracker.hasReceipt(originator, msgId, neigh)) {
+                continue;
+            }
 
             promises.push(this.sendToNode(neigh, data));
         }
@@ -566,13 +586,12 @@ class ChordNode {
                 let receiptPacket = {
                     type: "RECEIPT",
                     originator: originator,
-                    msgId: msgId,
+                    id: msgId,
                 };
                 if (ret) {
                     // broadcast data and send receipts to neighbors
-                    let dataPacket = { ...data };
-                    dataPacket[sender] = this.own_id;
-                    this.relay(dataPacket);
+                    this.tracker.handleReceipt(originator, msgId, sender);
+                    this.relay(data);
 
                     let neighbors = this.functions.getNeighbors();
                     for (let neigh of neighbors)
