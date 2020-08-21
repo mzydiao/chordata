@@ -39,11 +39,20 @@ class MessageGraph:
 
     def plot_msg(self, msgs, ax):
         for a, b in msgs:
-            print(a, b)
             degs = list(map(self.get_deg, (a, b)))
+            
+            x1, x2 = np.cos(degs)
+            y1, y2 = np.sin(degs)
 
-            # connect a, b
-            ax.plot(np.cos(degs), np.sin(degs), 'tab:green')
+            ax.annotate("",
+                xy=(x2, y2), xycoords='data',
+                xytext=(x1, y1), textcoords='data',
+                arrowprops=dict(arrowstyle="->",
+                                mutation_scale=15,
+                                lw=2,
+                                connectionstyle="arc3",
+                                color="tab:green"),
+                )
 
     def plot_holds(self, holds, ax):
         degs = list(map(self.get_deg, holds))
