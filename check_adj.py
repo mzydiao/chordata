@@ -8,6 +8,8 @@ import numpy as np
 m = 8
 
 # check that each person has good finger table.
+
+
 def check_adj(adj):
     # get a list of the edges in the adjacency list
     edges = [(int(k), int(v)) for k, l in adj.items() for v in l]
@@ -29,7 +31,7 @@ def check_adj(adj):
         rotated_nodes = [(n - node) % 4**m for n in all_nodes]
         my_index = rotated_nodes.index(0)
         rotated_nodes = rotated_nodes[my_index+1:] + rotated_nodes[:my_index]
-        
+
         # calculate successor(node + 4 ** i), add to finger table.
         for i in range(m):
             plus = 4 ** i
@@ -56,14 +58,19 @@ def check_adj(adj):
     print("set difference edges-fingers:", set_edges - fingers_edges)
     if set_edges != fingers_edges:
         print("edges and fingers do not match")
-        print("fingers:", fingers_edges)
-        return 
+        return fingers
     print('good :D')
+    return None
+
 
 if __name__ == '__main__':
-    #open the data.json file containing each adjacency dicts at each timestep
+    # open the data.json file containing each adjacency dicts at each timestep
     with open(os.path.join(os.getcwd(), 'data.json'), 'r') as f:
         adj = json.load(f)
     # run the adjacency check on the final graph
 
-    check_adj(adj[-1])
+    ret = check_adj(adj[-1])
+    if ret is not None:
+        with open(os.path.join(os.getcwd(), 'fingers.json'), 'w') as f:
+            json.dump([{k: list(ret[k]) for k in ret}], f)
+        os.system('python .\\timestamps.py fingers.json correct')

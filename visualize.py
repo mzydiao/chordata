@@ -7,7 +7,9 @@ import sys
 import matplotlib.pyplot as plt
 
 # generate plots on ax given an adjacency dictionary
-def get_plots(adj, ax, all_nodes = None, indices = None):
+
+
+def get_plots(adj, ax, all_nodes=None, indices=None):
     # retrieve the edges in the adjacency dictionary
     edges = [(int(k), int(v)) for k, l in adj.items() for v in l]
 
@@ -23,7 +25,7 @@ def get_plots(adj, ax, all_nodes = None, indices = None):
         # where theta is 2pi * node's index / total # nodes.
         if indices is not None:
             theta1, theta2 = indices[a], indices[b]
-        else: 
+        else:
             theta1, theta2 = all_nodes.index(a), all_nodes.index(b)
         degs = [theta1/(len(all_nodes)) * 2 * np.pi,
                 theta2/(len(all_nodes)) * 2 * np.pi]
@@ -36,13 +38,13 @@ def get_plots(adj, ax, all_nodes = None, indices = None):
         # calculate the degree of location of the node
         if indices is not None:
             deg = indices[node]/len(all_nodes) * 2 * np.pi
-        else: 
+        else:
             deg = all_nodes.index(node)/(len(all_nodes)) * 2 * np.pi
 
         # calculate coordinate given degree
         c, s = np.cos(deg)*1.1, np.sin(deg)*1.1
 
-        #label the coordinate
+        # label the coordinate
         ax.text(c, s, node,
                 horizontalalignment='center',
                 verticalalignment='center')
@@ -51,21 +53,23 @@ def get_plots(adj, ax, all_nodes = None, indices = None):
 if __name__ == '__main__':
     # read the adjacency matrix JSON file
     figs_path = os.path.join(os.getcwd(), 'figs')
-    with open(os.path.join(os.getcwd(), 'data.json'), 'r') as f:
+    in_file = sys.argv[1] if len(sys.argv) == 3 else 'data.json'
+    with open(os.path.join(os.getcwd(), in_file), 'r') as f:
         adj = json.load(f)
 
-    fig, ax = plt.subplots(1, 1, figsize=(10,10))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 
     all_nodes = {int(k) for k in adj[-1]}
     all_nodes = sorted(all_nodes)
 
     indices = {node: i for i, node in enumerate(all_nodes)}
 
-    lim = 1.0
+    lim = 1.5
     for i in range(len(adj)):
         ax.clear()
         ax.axis('off')
-        ax.set_xlim(left = -lim, right = lim)
-        ax.set_ylim(top = lim, bottom=-lim)
+        ax.set_xlim(left=-lim, right=lim)
+        ax.set_ylim(top=lim, bottom=-lim)
         get_plots(adj[i], ax, all_nodes=all_nodes, indices=indices)
-        plt.savefig(os.path.join(figs_path,'chord-fingers-%d.png' % i), dpi=300)
+        plt.savefig(os.path.join(figs_path, '%s-%d.png' %
+                                 (sys.argv[-1], i)), dpi=300)
