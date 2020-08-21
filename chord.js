@@ -1,5 +1,6 @@
 const jsbi = require("jsbi");
 const SortedList = require("sortedlist");
+const EventEmitter = require("events").EventEmitter;
 const MessageTracker = require("./messageTracker");
 
 // m stores log4 (max identifier + 1)
@@ -20,7 +21,7 @@ function createSortedList(initial = []) {
     );
 }
 
-class ChordNode {
+class ChordNode extends EventEmitter {
     /**
      * Creates an instance of ChordNode.
      *
@@ -42,6 +43,7 @@ class ChordNode {
             messageResendInterval = 1000,
         }
     ) {
+        super();
         this.own_id = hash;
         this.functions = funcs;
 
@@ -301,6 +303,11 @@ class ChordNode {
                 let successorIndex = 0;
                 let attemptConnection = () => {
                     this.fingers[0] = successorList[successorIndex];
+                    if (this.functions.hasConnection(this.fingers[0]))
+                        // already have connection to new successor, so do
+                        // nothing
+                        return;
+
                     // attempt to make a connection to potential successor
                     this.functions
                         .connect(this.fingers[0])
@@ -483,7 +490,7 @@ class ChordNode {
             content: data,
         };
         this.tracker.nextSendId++;
-        this.relay(packet);
+        return this.relay(packet);
     }
 
     /**
@@ -596,7 +603,7 @@ class ChordNode {
                     for (let neigh of neighbors)
                         this.functions.sendMessage(neigh, receiptPacket);
 
-                    // TODO: emit an event
+                    this.emit("data", data.content);
                 } else {
                     this.functions.sendMessage(sender, receiptPacket);
                 }
