@@ -203,7 +203,7 @@ class ChordNode {
      */
     on_disconnect(id) {
         if (id == this.predecessor) this.predecessor = null;
-        else if (id == this.fingers[0]) {
+        if (id == this.fingers[0]) {
             // if disconnected from successor, call query_successors to obtain
             // list of potential successors and attempt to connect in order
 
@@ -217,10 +217,18 @@ class ChordNode {
             }
 
             this.functions.query_successors().then((successorList) => {
+                if (successorList.length === 0) {
+                    // no successors, so set successor to null to enable
+                    // re-establishment of graph
+                    this.fingers[0] = null;
+                    return;
+                }
+
                 // index of successor to contact on successorlist
                 let successorIndex = 0;
                 let attemptConnection = () => {
-                    // attempt to make a connection to current successor
+                    this.fingers[0] = successorList[successorIndex];
+                    // attempt to make a connection to potential successor
                     this.functions
                         .connect(this.fingers[0])
                         .then(() => {
@@ -236,7 +244,6 @@ class ChordNode {
                                 // error; TODO: deal with this
                                 throw "no this.fingers[0]";
                             }
-                            this.fingers[0] = successorList[successorIndex];
                             attemptConnection();
                         });
                 };
