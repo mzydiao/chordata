@@ -1,10 +1,11 @@
 # goal: produce plots of the messages at each time step.
 
 import json
-import os
 import numpy as np
-import sys
 import matplotlib.pyplot as plt
+import os
+import sys
+import shutil
 
 # generate plots on ax given an adjacency dictionary
 
@@ -74,7 +75,7 @@ class MessageGraph:
             ax.plot(np.cos(degs), np.sin(degs), 'tab:gray')
 
         # label all the nodes
-        for node in {int(k) for k in adj}:
+        for node in adj:
             # calculate the degree of location of the node
             deg = self.get_deg(node)
 
@@ -83,7 +84,7 @@ class MessageGraph:
             c, s = np.cos(deg)*scale, np.sin(deg)*scale
 
             # label the coordinate
-            ax.text(c, s, node,
+            ax.text(c, s, node[:4],
                     horizontalalignment='center',
                     verticalalignment='center')
 
@@ -105,11 +106,19 @@ if __name__ == '__main__':
 
     graph = MessageGraph(all_nodes, indices, lim)
 
+    figs_name = sys.argv[-1]
+
+    export_path = os.path.join(figs_path, figs_name)
+
+    if os.path.exists(export_path):
+        shutil.rmtree(export_path)
+    os.mkdir(export_path)
+
     for i, t in enumerate(snapshots):
         # snapshots: adj, msgs, holders
         adj = t['adj']
         msgs = t['msgs']
         holders = t['holders']
         graph.plot(ax, adj, msgs, holders)
-        plt.savefig(os.path.join(figs_path, '%s-%d.png' %
-                                 (sys.argv[-1], i)), dpi=300)
+        plt.savefig(os.path.join(export_path, '%d.png' %
+                                 i), dpi=300)
