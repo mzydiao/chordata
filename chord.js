@@ -109,6 +109,32 @@ class ChordNode extends EventEmitter {
     }
 
     /**
+     * Returns the distance in key space between ids a, b
+     * @param {String} a node idenfitier a, hex
+     * @param {String} b node identifier b, hex
+     * @returns {BigInt} distance
+     */
+    distance(a, b) {
+        a = jsbi.BigInt(`0x${a}`);
+        b = jsbi.BigInt(`0x${b}`);
+
+        let posDist = jsbi.remainder(
+            jsbi.subtract(a, b),
+            jsbi.exponentiate(4, m)
+        )
+        
+        let negDist = jsbi.remainder(
+            jsbi.subtract(b, a),
+            jsbi.exponentiate(4, m)
+        )
+
+        if (jsbi.lessThan(posDist, negDist)) {
+            return posDist;
+        }
+        return negDist;
+    }
+
+    /**
      * Notifies a node of this node's existence.
      *
      * @param {String} id identifier of node to be notified, hex string
@@ -520,6 +546,29 @@ class ChordNode extends EventEmitter {
         }
 
         return Promise.all(promises);
+    }
+
+    /**
+     * 
+     * @param {String} nodeId 
+     * @param {object} data 
+     * @returns {Promise} resolves when get receipt from next person
+     */
+    directedSend(nodeId, data) {
+        // query for neighbors
+        let neighbors = this.functions.getNeighbors();
+        
+        let currMinDist;
+        let currMinNeigh;
+        
+        for (let neigh of neighbors) {
+            let dist = this.distance(neigh, nodeId);
+            if (currMinDist === undefined || jsbi.lessThan(dist, currMinDist)) {
+                currMinDist = dist;
+                currMinNeigh = neigh;
+            }
+        }
+        return this.sendToNode(currMinNeigh, data)
     }
 
     /**
