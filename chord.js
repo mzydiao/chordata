@@ -69,6 +69,8 @@ class ChordNode extends EventEmitter {
         this.nodeList = null;
 
         this.tracker = new MessageTracker();
+        // Map: dest id -> MessageTracker;
+        this.directedTracker = new Map();
         this.messageResendInterval = messageResendInterval;
     }
 
@@ -117,16 +119,20 @@ class ChordNode extends EventEmitter {
     distance(a, b) {
         a = jsbi.BigInt(`0x${a}`);
         b = jsbi.BigInt(`0x${b}`);
+        console.log('a',a);
+        console.log('b',b);
 
         let posDist = jsbi.remainder(
             jsbi.subtract(a, b),
-            jsbi.exponentiate(4, m)
+            jsbi.exponentiate(jsbi.BigInt(4), m)
         )
+        console.log('posDist',posDist);
         
         let negDist = jsbi.remainder(
             jsbi.subtract(b, a),
-            jsbi.exponentiate(4, m)
+            jsbi.exponentiate(jsbi.BigInt(4), m)
         )
+        console.log('negDist',negDist);
 
         if (jsbi.lessThan(posDist, negDist)) {
             return posDist;
@@ -548,13 +554,7 @@ class ChordNode extends EventEmitter {
         return Promise.all(promises);
     }
 
-    /**
-     * 
-     * @param {String} nodeId 
-     * @param {object} data 
-     * @returns {Promise} resolves when get receipt from next person
-     */
-    directedSend(nodeId, data) {
+    sendToClosestNeighbor(nodeId, data) {
         // query for neighbors
         let neighbors = this.functions.getNeighbors();
         
@@ -568,7 +568,30 @@ class ChordNode extends EventEmitter {
                 currMinNeigh = neigh;
             }
         }
+        console.log('min dist', currMinDist);
+        console.log('min guy', currMinNeigh);
         return this.sendToNode(currMinNeigh, data)
+    }
+
+    /**
+     * 
+     * @param {String} nodeId 
+     * @param {object} data 
+     * @returns {Promise} resolves when get receipt from next person
+     */
+    directedSend(nodeId, data) {
+        if (!this.directedTracker.has(nodeId)) {
+            this.directedTracker.set(nodeId, new MessageTracker());
+        }
+        let packet = {
+            originator: this.own_id,
+            destination: nodeId,
+            id: this.directedTracker.get(nodeId).nextSendId,
+            type: "DIRECTED",
+            content: data,
+        };
+        this.directedTracker.get(nodeId).nextSendId++;
+        return this.sendToClosestNeighbor(nodeId, packet);
     }
 
     /**
@@ -609,7 +632,18 @@ class ChordNode extends EventEmitter {
                 clearInterval(messageIntervalHandle);
                 resolve();
             };
-            this.tracker.sentMessage(
+            let destination = data.destination;
+
+            let currTracker;
+            if (destination === undefined) {
+                currTracker = this.tracker;
+            } else {
+                if (!this.directedTracker.has(destination)) {
+                    this.directedTracker.set(destination, new MessageTracker());
+                }
+                currTracker = this.directedTracker.get(destination);
+            }
+            currTracker.sentMessage(
                 originator,
                 msgId,
                 nodeId,
@@ -628,17 +662,56 @@ class ChordNode extends EventEmitter {
         let originator = data.originator;
         let msgId = data.id;
 
+        console.log("bobobobobo");
         if (originator === undefined || msgId === undefined) {
+            console.log("this is bad")
             return;
         }
 
+        let currTracker;
+        let ret;
+        let receiptPacket;
+
         switch (data.type) {
+            case "DIRECTED":
+                let destination = data.destination;
+                console.log("bob");
+
+                if (!this.directedTracker.has(destination)) {
+                    this.directedTracker.set(destination, new MessageTracker());
+                }
+                currTracker = this.directedTracker.get(destination);
+
+                ret = currTracker.receiveMessage(originator, msgId);
+                receiptPacket = {
+                    type: "DRECEIPT",
+                    originator: originator,
+                    destination: destination,
+                    id: msgId,
+                };
+                if (ret) {
+                    //send to closest neighbor
+                    currTracker.handleReceipt(originator, msgId, sender);
+                    this.sendToClosestNeighbor(destination, data);
+                    this.emit("data", data.content);
+                }
+                this.functions.sendMessage(sender, receiptPacket);
+                break;
+            case "DRECEIPT":
+                if (!this.directedTracker.has(destination)) {
+                    currTracker = new MessageTracker();
+                }
+                else {
+                    currTracker = this.directedTracker.get(destination);
+                }
+                currTracker.handleReceipt(originator, msgId, sender);
+                break;
             case "RECEIPT":
                 this.tracker.handleReceipt(originator, msgId, sender);
                 break;
             case "PACKET":
-                let ret = this.tracker.receiveMessage(originator, msgId);
-                let receiptPacket = {
+                ret = this.tracker.receiveMessage(originator, msgId);
+                receiptPacket = {
                     type: "RECEIPT",
                     originator: originator,
                     id: msgId,
