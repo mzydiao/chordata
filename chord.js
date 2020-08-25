@@ -41,6 +41,7 @@ class ChordNode extends EventEmitter {
             fixFingersInterval,
             trackNodeList,
             messageResendInterval = 1000,
+            messageResendCount = 5,
         }
     ) {
         super();
@@ -73,6 +74,7 @@ class ChordNode extends EventEmitter {
         // Map: dest id -> MessageTracker;
         this.directedTracker = new Map();
         this.messageResendInterval = messageResendInterval;
+        this.messageResendCount = messageResendCount;
     }
 
     /**
@@ -546,9 +548,11 @@ class ChordNode extends EventEmitter {
             promises.push(this.sendToNode(neigh, data));
         }
 
-        return Promise.all(promises).then(() => {
-            this.tracker.deleteMessage(originator, msgId);
-        });
+        return Promise.all(promises)
+            .catch(() => {})
+            .then(() => {
+                this.tracker.deleteMessage(originator, msgId);
+            });
     }
 
     sendToClosestNeighbor(nodeId, data, sender) {
@@ -620,10 +624,18 @@ class ChordNode extends EventEmitter {
                 return;
             }
 
+            let counter = 0;
             const sendMessage = () => {
-                // do some stuff
-                // send the message somehow
-                this.functions.sendMessage(nodeId, data);
+                if (
+                    this.functions.hasConnection(nodeId) &&
+                    counter < this.messageResendCount
+                )
+                    this.functions.sendMessage(nodeId, data);
+                else {
+                    clearInterval(messageIntervalHandle);
+                    reject();
+                }
+                counter++;
             };
             const messageIntervalHandle = setInterval(
                 sendMessage,
