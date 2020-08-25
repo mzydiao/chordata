@@ -82,6 +82,11 @@ class MessageTracker {
         );
     }
 
+    deleteMessage(originator, msgId) {
+        if (this.hasMessage(originator, msgId))
+            this.messages.delete(`${originator},${msgId}`);
+    }
+
     hasReceipt(originator, msgId, node) {
         return (
             this.hasMessage(originator, msgId) &&
@@ -96,10 +101,17 @@ class MessageTracker {
     }
 
     handleReceipt(originator, msgId, node) {
-        if (this.hasMessage(originator, msgId))
+        if (this.hasMessage(originator, msgId)) {
             this.getMessage(originator, msgId).resolveHandler(node);
-        else this.createMessage(originator, msgId);
-        this.getMessage(originator, msgId).setReceipt(node);
+            this.getMessage(originator, msgId).setReceipt(node);
+        } else if (
+            !this.tracker.has(originator) ||
+            (msgId >= this.tracker.get(originator).index &&
+                !this.tracker.get(originator).buffer.includes(msgId))
+        ) {
+            this.createMessage(originator, msgId);
+            this.getMessage(originator, msgId).setReceipt(node);
+        }
     }
 
     receiveMessage(originator, msgId) {

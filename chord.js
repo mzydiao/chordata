@@ -69,6 +69,7 @@ class ChordNode extends EventEmitter {
         this.nodeList = null;
 
         this.tracker = new MessageTracker();
+
         // Map: dest id -> MessageTracker;
         this.directedTracker = new Map();
         this.messageResendInterval = messageResendInterval;
@@ -524,7 +525,7 @@ class ChordNode extends EventEmitter {
      * @param {object} data data to send
      * @returns {Promise} resolves when all adjacent nodes have sent receipt
      */
-    relay(data) {
+    relay(data, sender) {
         // query for neighbors
         let neighbors = this.functions.getNeighbors();
 
@@ -540,11 +541,14 @@ class ChordNode extends EventEmitter {
             if (this.tracker.hasReceipt(originator, msgId, neigh)) {
                 continue;
             }
+            if (neigh === sender) continue;
 
             promises.push(this.sendToNode(neigh, data));
         }
 
-        return Promise.all(promises);
+        return Promise.all(promises).then(() => {
+            this.tracker.deleteMessage(originator, msgId);
+        });
     }
 
     sendToClosestNeighbor(nodeId, data, sender) {
@@ -564,7 +568,11 @@ class ChordNode extends EventEmitter {
 
         if (currMinNeigh === sender)
             return Promise.reject("sender is closest node");
-        return this.sendToNode(currMinNeigh, data);
+        return this.sendToNode(currMinNeigh, data).then(() => {
+            this.directedTracker
+                .get(data.destination)
+                .deleteMessage(data.originator, data.id);
+        });
     }
 
     /**
@@ -615,7 +623,6 @@ class ChordNode extends EventEmitter {
             const sendMessage = () => {
                 // do some stuff
                 // send the message somehow
-                console.log("sending message to", nodeId);
                 this.functions.sendMessage(nodeId, data);
             };
             const messageIntervalHandle = setInterval(
@@ -715,7 +722,7 @@ class ChordNode extends EventEmitter {
                 if (ret) {
                     // broadcast data and send receipts to neighbors
                     this.tracker.handleReceipt(originator, msgId, sender);
-                    this.relay(data);
+                    this.relay(data, sender);
 
                     let neighbors = this.functions.getNeighbors();
                     for (let neigh of neighbors)
