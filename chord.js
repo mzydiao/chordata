@@ -193,7 +193,9 @@ class ChordNode extends EventEmitter {
 
                     if (!this.functions.hasConnection(ps)) {
                         // if not already connected to ps, attempt connection
-                        this.functions.connect(ps);
+                        this.functions.connect(ps).then(() => {
+                            this.stabilize();
+                        });
                         this.tempSuccessor = ps;
                     } else if (this.functions.isConnected(ps)) {
                         // already connected to ps, so set successor to ps and
@@ -212,6 +214,8 @@ class ChordNode extends EventEmitter {
                             // TODO: might need to think about this again for
                             // reverse fingers
                         }
+
+                        this.stabilize();
                     }
                 }
             })
@@ -245,8 +249,14 @@ class ChordNode extends EventEmitter {
                 if (
                     this.predecessor === null ||
                     this.between(this.predecessor, sender, this.own_id)
-                )
+                ) {
+                    let oldPredecessor = this.predecessor;
                     this.predecessor = sender;
+                    if (oldPredecessor)
+                        this.functions.send_rpc(oldPredecessor, {
+                            type: "UPDATE",
+                        });
+                }
 
                 if (
                     this.predecessor === sender &&
@@ -260,6 +270,11 @@ class ChordNode extends EventEmitter {
 
             case "GET_PREDECESSOR":
                 resolve_rpc(this.predecessor);
+                break;
+
+            case "UPDATE":
+                resolve_rpc(null);
+                this.stabilize();
                 break;
 
             case "FIND_SUCCESSOR":
