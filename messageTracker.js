@@ -19,7 +19,8 @@ class Message {
     }
 
     resolveHandler(node) {
-        this.resolutionHandlers.get(node)();
+        if (this.resolutionHandlers.has(node))
+            this.resolutionHandlers.get(node)();
     }
 }
 

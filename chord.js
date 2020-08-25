@@ -725,7 +725,7 @@ class ChordNode extends EventEmitter {
                     for (let neigh of neighbors)
                         this.functions.sendMessage(neigh, receiptPacket);
 
-                    this.emit("data", data.content);
+                    this.emit("data", data.originator, data.content);
                 } else {
                     this.functions.sendMessage(sender, receiptPacket);
                 }
