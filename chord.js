@@ -119,20 +119,13 @@ class ChordNode extends EventEmitter {
     distance(a, b) {
         a = jsbi.BigInt(`0x${a}`);
         b = jsbi.BigInt(`0x${b}`);
-        console.log('a',a);
-        console.log('b',b);
 
-        let posDist = jsbi.remainder(
-            jsbi.subtract(a, b),
-            jsbi.exponentiate(jsbi.BigInt(4), m)
-        )
-        console.log('posDist',posDist);
-        
-        let negDist = jsbi.remainder(
-            jsbi.subtract(b, a),
-            jsbi.exponentiate(jsbi.BigInt(4), m)
-        )
-        console.log('negDist',negDist);
+        let exp = jsbi.exponentiate(jsbi.BigInt(4), m);
+        let posDist = jsbi.remainder(jsbi.add(jsbi.subtract(a, b), exp), exp);
+        console.log("posDist", posDist.toString());
+
+        let negDist = jsbi.remainder(jsbi.add(jsbi.subtract(b, a), exp), exp);
+        console.log("negDist", negDist.toString());
 
         if (jsbi.lessThan(posDist, negDist)) {
             return posDist;
@@ -554,13 +547,13 @@ class ChordNode extends EventEmitter {
         return Promise.all(promises);
     }
 
-    sendToClosestNeighbor(nodeId, data) {
+    sendToClosestNeighbor(nodeId, data, sender) {
         // query for neighbors
         let neighbors = this.functions.getNeighbors();
-        
+
         let currMinDist;
         let currMinNeigh;
-        
+
         for (let neigh of neighbors) {
             let dist = this.distance(neigh, nodeId);
             if (currMinDist === undefined || jsbi.lessThan(dist, currMinDist)) {
@@ -568,15 +561,16 @@ class ChordNode extends EventEmitter {
                 currMinNeigh = neigh;
             }
         }
-        console.log('min dist', currMinDist);
-        console.log('min guy', currMinNeigh);
-        return this.sendToNode(currMinNeigh, data)
+
+        if (currMinNeigh === sender)
+            return Promise.reject("sender is closest node");
+        return this.sendToNode(currMinNeigh, data);
     }
 
     /**
-     * 
-     * @param {String} nodeId 
-     * @param {object} data 
+     *
+     * @param {String} nodeId
+     * @param {object} data
      * @returns {Promise} resolves when get receipt from next person
      */
     directedSend(nodeId, data) {
@@ -591,7 +585,7 @@ class ChordNode extends EventEmitter {
             content: data,
         };
         this.directedTracker.get(nodeId).nextSendId++;
-        return this.sendToClosestNeighbor(nodeId, packet);
+        return this.sendToClosestNeighbor(nodeId, packet, this.own_id);
     }
 
     /**
@@ -613,6 +607,7 @@ class ChordNode extends EventEmitter {
             }
 
             if (this.tracker.hasReceipt(originator, msgId, nodeId)) {
+                // TODO
                 reject("already received!");
                 return;
             }
@@ -620,6 +615,7 @@ class ChordNode extends EventEmitter {
             const sendMessage = () => {
                 // do some stuff
                 // send the message somehow
+                console.log("sending message to", nodeId);
                 this.functions.sendMessage(nodeId, data);
             };
             const messageIntervalHandle = setInterval(
@@ -661,10 +657,9 @@ class ChordNode extends EventEmitter {
         // want to handle receipts but also messages that are supposed to be relayed
         let originator = data.originator;
         let msgId = data.id;
+        let destination = data.destination;
 
-        console.log("bobobobobo");
         if (originator === undefined || msgId === undefined) {
-            console.log("this is bad")
             return;
         }
 
@@ -674,34 +669,35 @@ class ChordNode extends EventEmitter {
 
         switch (data.type) {
             case "DIRECTED":
-                let destination = data.destination;
-                console.log("bob");
-
-                if (!this.directedTracker.has(destination)) {
-                    this.directedTracker.set(destination, new MessageTracker());
-                }
-                currTracker = this.directedTracker.get(destination);
-
-                ret = currTracker.receiveMessage(originator, msgId);
                 receiptPacket = {
                     type: "DRECEIPT",
                     originator: originator,
                     destination: destination,
                     id: msgId,
                 };
-                if (ret) {
-                    //send to closest neighbor
-                    currTracker.handleReceipt(originator, msgId, sender);
-                    this.sendToClosestNeighbor(destination, data);
-                    this.emit("data", data.content);
-                }
                 this.functions.sendMessage(sender, receiptPacket);
+
+                if (this.own_id === destination) {
+                    if (!this.directedTracker.has(destination)) {
+                        this.directedTracker.set(
+                            destination,
+                            new MessageTracker()
+                        );
+                    }
+                    currTracker = this.directedTracker.get(destination);
+                    ret = currTracker.receiveMessage(originator, msgId);
+                    if (ret) this.emit("data", originator, data.content);
+                } else {
+                    //send to closest neighbor
+                    // currTracker.handleReceipt(originator, msgId, sender);
+                    this.sendToClosestNeighbor(destination, data, sender);
+                }
                 break;
             case "DRECEIPT":
+                destination = data.destination;
                 if (!this.directedTracker.has(destination)) {
                     currTracker = new MessageTracker();
-                }
-                else {
+                } else {
                     currTracker = this.directedTracker.get(destination);
                 }
                 currTracker.handleReceipt(originator, msgId, sender);
