@@ -152,7 +152,7 @@ class ChordNode extends EventEmitter {
             // notified by predecessor
             message.nodeList = this.nodeList;
 
-        this.functions.send_rpc(id, message).catch((err) => {
+        return this.functions.send_rpc(id, message).catch((err) => {
             // if node id can't be notified, do nothing
             console.error("notify", err);
         });
@@ -166,8 +166,25 @@ class ChordNode extends EventEmitter {
      */
     join(id) {
         this.fingers[0] = id;
-        this.functions.connect(this.fingers[0]).then(() => {
-            this.notify(this.fingers[0]);
+        return this.functions.connect(this.fingers[0]).then(() => {
+            return new Promise((resolve, reject) => {
+                let count = 0;
+                let intervalHandle;
+                const attempt = () => {
+                    console.log("notifying");
+                    this.notify(this.fingers[0]).then(() => {
+                        clearInterval(intervalHandle);
+                        resolve();
+                    });
+                    count++;
+
+                    if (count > 5) {
+                        clearInterval(intervalHandle);
+                        reject();
+                    }
+                };
+                intervalHandle = setInterval(attempt, 500);
+            });
         }); // TODO: handle error in connect promise?
     }
 
