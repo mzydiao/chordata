@@ -75,6 +75,8 @@ class ChordNode extends EventEmitter {
         this.directedTracker = new Map();
         this.messageResendInterval = messageResendInterval;
         this.messageResendCount = messageResendCount;
+
+        this.on("data", (src, data) => this.handleData(src, data));
     }
 
     /**
@@ -241,7 +243,10 @@ class ChordNode extends EventEmitter {
                 // after node a calls create(), when the second node b joins,
                 // a.successor is null; b notifies a, and a should set b to be
                 // both predecessor and successor
-                if (this.fingers[0] === null) this.fingers[0] = sender;
+                if (this.fingers[0] === null) {
+                    this.fingers[0] = sender;
+                    this.notify(this.fingers[0]);
+                }
 
                 // set sender to be the predecessor if between current
                 // predecessor and this node, or if predecessor has not yet
@@ -290,25 +295,50 @@ class ChordNode extends EventEmitter {
     }
 
     /**
-     * Updates the node list if trackNodeList is true.
+     * Updates the node list if trackNodeList is true; sends update info to
+     * other nodes
      *
      * @param {SortedList} list updated node list from predecessor
      */
     updateNodeList(list) {
-        if (!list.includes(this.predecessor))
+        // lists of ids added or removed
+        let add = [];
+        let remove = [];
+        if (list.key(this.predecessor) === null)
             throw (
                 "new node list does not include predecessor " + this.predecessor
             );
-        let ownIndex;
-        if (!list.includes(this.own_id)) ownIndex = list.insertOne(this.own_id);
-        else ownIndex = list.bsearch(this.own_id);
-        let predIndex = list.bsearch(this.predecessor);
+
+        if (list.key(this.own_id) === null) {
+            // if list does not contain own id, add own id and announce it
+            add.push(this.own_id);
+            list.insertOne(this.own_id);
+        }
+
+        // find indices
+        let ownIndex = list.key(this.own_id);
+        let predIndex = list.key(this.predecessor);
+        // rotate list to begin with predecessor
+        list = list.slice(predIndex).concat(list.slice(0, predIndex));
+        // recalculate ownIndex
+        ownIndex =
+            ownIndex > predIndex
+                ? ownIndex - predIndex
+                : list.length - predIndex + ownIndex;
 
         // remove any values between predecessor and this node in the list
-        for (let i = predIndex + 1; i < ownIndex; i++) {
-            list.remove(i);
-        }
-        this.nodeList = list;
+        this.nodeList = createSortedList(
+            [this.predecessor].concat(list.slice(ownIndex))
+        );
+        // announce removed ids
+        remove = list.slice(1, ownIndex);
+        if (add.length > 0 || remove.length > 0)
+            this.broadcast({
+                type: "NL",
+                add: add,
+                remove: remove,
+            });
+        this.emit("nodeList", add, remove);
     }
 
     /**
@@ -336,9 +366,16 @@ class ChordNode extends EventEmitter {
                     // no successors, so set successor to null to enable
                     // re-establishment of graph
                     this.fingers[0] = null;
-                    if (this.trackNodeList)
+                    if (this.trackNodeList) {
+                        // emit event removing all other ids
+                        this.emit(
+                            "nodeList",
+                            [],
+                            this.nodeList.filter((id) => id !== this.own_id)
+                        );
                         // reset node list to this node only
                         this.nodeList = createSortedList([this.own_id]);
+                    }
                     return;
                 }
 
@@ -346,10 +383,12 @@ class ChordNode extends EventEmitter {
                 let successorIndex = 0;
                 let attemptConnection = () => {
                     this.fingers[0] = successorList[successorIndex];
-                    if (this.functions.hasConnection(this.fingers[0]))
-                        // already have connection to new successor, so do
-                        // nothing
+                    if (this.functions.hasConnection(this.fingers[0])) {
+                        // already have connection to new successor, so just
+                        // notify them
+                        this.notify(this.fingers[0]);
                         return;
+                    }
 
                     // attempt to make a connection to potential successor
                     this.functions
@@ -518,6 +557,25 @@ class ChordNode extends EventEmitter {
                 consult.push(this.fingers[i]);
         }
         return consult;
+    }
+
+    handleData(src, data) {
+        if (this.trackNodeList) {
+            if (data.type === "NL") {
+                // handle broadcasts with node list updates
+                if (this.nodeList === null) return;
+                let { add, remove } = data;
+                for (let a of add) {
+                    if (this.nodeList.key(a) === null)
+                        this.nodeList.insertOne(a);
+                }
+                for (let r of remove) {
+                    let key = this.nodeList.key(r);
+                    if (key !== null) this.nodeList.remove(key);
+                }
+                this.emit("nodeList", add, remove);
+            }
+        }
     }
 
     /**
