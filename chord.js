@@ -21,6 +21,13 @@ function createSortedList(initial = []) {
     );
 }
 
+const VERBOSITY = {
+    FATAL: 0,
+    ERROR: 1,
+    WARNING: 2,
+    INFO: 3,
+};
+
 class ChordNode extends EventEmitter {
     /**
      * Creates an instance of ChordNode.
@@ -42,11 +49,13 @@ class ChordNode extends EventEmitter {
             trackNodeList,
             messageResendInterval = 1000,
             messageResendCount = 5,
+            verbosity = VERBOSITY.INFO,
         }
     ) {
         super();
         this.own_id = hash;
         this.functions = funcs;
+        this.verbosity = verbosity;
 
         this.predecessor = null;
         this.tempSuccessor = null;
@@ -127,10 +136,12 @@ class ChordNode extends EventEmitter {
 
         let exp = jsbi.exponentiate(jsbi.BigInt(4), m);
         let posDist = jsbi.remainder(jsbi.add(jsbi.subtract(a, b), exp), exp);
-        console.log("posDist", posDist.toString());
+        if (this.verbosity >= VERBOSITY.INFO)
+            console.log("posDist", posDist.toString());
 
         let negDist = jsbi.remainder(jsbi.add(jsbi.subtract(b, a), exp), exp);
-        console.log("negDist", negDist.toString());
+        if (this.verbosity >= VERBOSITY.INFO)
+            console.log("negDist", negDist.toString());
 
         if (jsbi.lessThan(posDist, negDist)) {
             return posDist;
@@ -154,7 +165,8 @@ class ChordNode extends EventEmitter {
 
         return this.functions.send_rpc(id, message).catch((err) => {
             // if node id can't be notified, do nothing
-            console.error("notify", err);
+            if (this.verbosity >= VERBOSITY.WARNING)
+                console.error("notify", err);
         });
     }
 
@@ -171,7 +183,8 @@ class ChordNode extends EventEmitter {
                 let count = 0;
                 let intervalHandle;
                 const attempt = () => {
-                    console.log("notifying");
+                    if (this.verbosity >= VERBOSITY.INFO)
+                        console.log("notifying");
                     this.notify(this.fingers[0]).then(() => {
                         clearInterval(intervalHandle);
                         resolve();
@@ -240,7 +253,8 @@ class ChordNode extends EventEmitter {
             })
             .catch((err) => {
                 // if couldn't get ps from successor, do nothing
-                console.error("stabilize", err);
+                if (this.verbosity >= VERBOSITY.WARNING)
+                    console.error("stabilize", err);
             });
 
         // finally, attempt to notify the successor
@@ -374,7 +388,7 @@ class ChordNode extends EventEmitter {
                 // new successor (tempSuccessor), give up on stabilization and
                 // disconnect from tempSuccessor
                 this.functions.disconnect(this.tempSuccessor).catch((err) => {
-                    console.error(err);
+                    if (this.verbosity >= VERBOSITY.ERROR) console.error(err);
                 });
             }
 
@@ -469,7 +483,8 @@ class ChordNode extends EventEmitter {
                         !this.fingers.includes(old_finger)
                     ) {
                         this.functions.disconnect(old_finger).catch((err) => {
-                            console.error(err);
+                            if (this.verbosity >= VERBOSITY.ERROR)
+                                console.error(err);
                         });
                     }
 
@@ -477,21 +492,23 @@ class ChordNode extends EventEmitter {
                     // connection
                     if (!this.functions.hasConnection(correct_finger))
                         this.functions.connect(correct_finger).catch((err) => {
-                            console.error(err);
+                            if (this.verbosity >= VERBOSITY.ERROR)
+                                console.error(err);
                         });
                 } else if (!this.functions.hasConnection(correct_finger)) {
                     // if the finger table does not have to be changed, but for
                     // some reason not currently connected to the correct
                     // finger, attempt connection
                     this.functions.connect(correct_finger).catch((err) => {
-                        console.error(err);
+                        if (this.verbosity >= VERBOSITY.ERROR)
+                            console.error(err);
                     });
                 }
             })
             .catch((error) => {
                 // if successor couldn't be found, this finger can't be fixed
                 // at the moment, so do nothing
-                console.error(error);
+                if (this.verbosity >= VERBOSITY.WARNING) console.error(error);
             });
     }
 
@@ -545,7 +562,8 @@ class ChordNode extends EventEmitter {
                         .catch((err) => {
                             // could not contact consult, so retry with next
                             // finger in consultList
-                            console.error("find successor", err);
+                            if (this.verbosity >= VERBOSITY.WARNING)
+                                console.error("find successor", err);
                             ask();
                         });
                 };
@@ -625,7 +643,8 @@ class ChordNode extends EventEmitter {
         let msgId = data.id;
 
         if (originator === undefined || msgId === undefined) {
-            console.log("broadcast: originator or msgId is undefined!");
+            if (this.verbosity >= VERBOSITY.WARNING)
+                console.log("broadcast: originator or msgId is undefined!");
         }
 
         let promises = [];
