@@ -619,8 +619,9 @@ class ChordNode extends EventEmitter {
      * Sends data to the rest of the graph.
      *
      * @param {object} data data to broadcast to the rest of the graph
+     * @param {number} interval resend interval in ms, defaults to config value
      */
-    broadcast(data) {
+    broadcast(data, interval) {
         let packet = {
             originator: this.own_id,
             id: this.tracker.nextSendId,
@@ -628,16 +629,18 @@ class ChordNode extends EventEmitter {
             content: data,
         };
         this.tracker.nextSendId++;
-        return this.relay(packet);
+        return this.relay(packet, undefined, interval);
     }
 
     /**
      * keep broadcasting to fingers who haven't seen until receipt
      *
      * @param {object} data data to send
+     * @param {String} sender
+     * @param {number} interval resend interval in ms, defaults to config value
      * @returns {Promise} resolves when all adjacent nodes have sent receipt
      */
-    relay(data, sender) {
+    relay(data, sender, interval) {
         // query for neighbors
         let neighbors = this.functions.getNeighbors();
 
@@ -656,7 +659,7 @@ class ChordNode extends EventEmitter {
             }
             if (neigh === sender) continue;
 
-            promises.push(this.sendToNode(neigh, data));
+            promises.push(this.sendToNode(neigh, data, interval));
         }
 
         return Promise.all(promises)
@@ -666,7 +669,7 @@ class ChordNode extends EventEmitter {
             });
     }
 
-    sendToClosestNeighbor(nodeId, data, sender) {
+    sendToClosestNeighbor(nodeId, data, sender, interval) {
         // query for neighbors
         let neighbors = this.functions.getNeighbors();
 
@@ -683,7 +686,7 @@ class ChordNode extends EventEmitter {
 
         if (currMinNeigh === sender)
             return Promise.reject("sender is closest node");
-        return this.sendToNode(currMinNeigh, data).then(() => {
+        return this.sendToNode(currMinNeigh, data, interval).then(() => {
             this.directedTracker
                 .get(data.destination)
                 .deleteMessage(data.originator, data.id);
@@ -694,9 +697,10 @@ class ChordNode extends EventEmitter {
      *
      * @param {String} nodeId
      * @param {object} data
+     * @param {number} interval resend interval in ms, defaults to config value
      * @returns {Promise} resolves when get receipt from next person
      */
-    directedSend(nodeId, data) {
+    directedSend(nodeId, data, interval = undefined) {
         if (!this.directedTracker.has(nodeId)) {
             this.directedTracker.set(nodeId, new MessageTracker());
         }
@@ -708,7 +712,12 @@ class ChordNode extends EventEmitter {
             content: data,
         };
         this.directedTracker.get(nodeId).nextSendId++;
-        return this.sendToClosestNeighbor(nodeId, packet, this.own_id);
+        return this.sendToClosestNeighbor(
+            nodeId,
+            packet,
+            this.own_id,
+            interval
+        );
     }
 
     /**
@@ -716,9 +725,10 @@ class ChordNode extends EventEmitter {
      *
      * @param {String} nodeId
      * @param {object} data
+     * @param {number} interval resend interval in ms, defaults to config value
      * @returns {Promise} resolves when node nodeId returns receipt
      */
-    sendToNode(nodeId, data) {
+    sendToNode(nodeId, data, interval = this.messageResendInterval) {
         // TODO: additional arguments: timeout, waiting period before sending another copy
         return new Promise((resolve, reject) => {
             let originator = data.originator;
@@ -748,10 +758,7 @@ class ChordNode extends EventEmitter {
                 }
                 counter++;
             };
-            const messageIntervalHandle = setInterval(
-                sendMessage,
-                this.messageResendInterval
-            );
+            const messageIntervalHandle = setInterval(sendMessage, interval);
             sendMessage();
 
             let resolutionHandler = () => {
