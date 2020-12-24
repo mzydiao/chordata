@@ -6,6 +6,49 @@ const MessageTracker = require("./messageTracker");
 // m stores log4 (max identifier + 1)
 let m = jsbi.BigInt(64);
 
+/**
+ * Checks if node b is between node a and node c (i.e., a -> b -> c).
+ *
+ * @param {String} a node identifier a, hex
+ * @param {String} b node identifier b, hex
+ * @param {String} c node identifier c, hex
+ * @returns {boolean} whether or not b is beteen a and c
+ */
+function between(a, b, c) {
+    a = jsbi.BigInt(`0x${a}`);
+    b = jsbi.BigInt(`0x${b}`);
+    c = jsbi.BigInt(`0x${c}`);
+    if (jsbi.lessThan(a, c)) {
+        return jsbi.lessThan(a, b) && jsbi.lessThan(b, c);
+    }
+    return jsbi.lessThan(a, b) || jsbi.lessThan(b, c);
+}
+
+/**
+ * Returns the distance in key space between ids a, b
+ * @param {String} a node idenfitier a, hex
+ * @param {String} b node identifier b, hex
+ * @returns {BigInt} distance
+ */
+function distance(a, b) {
+    a = jsbi.BigInt(`0x${a}`);
+    b = jsbi.BigInt(`0x${b}`);
+
+    let exp = jsbi.exponentiate(jsbi.BigInt(4), m);
+    let posDist = jsbi.remainder(jsbi.add(jsbi.subtract(a, b), exp), exp);
+    if (this.verbosity >= VERBOSITY.INFO)
+        console.log("posDist", posDist.toString());
+
+    let negDist = jsbi.remainder(jsbi.add(jsbi.subtract(b, a), exp), exp);
+    if (this.verbosity >= VERBOSITY.INFO)
+        console.log("negDist", negDist.toString());
+
+    if (jsbi.lessThan(posDist, negDist)) {
+        return posDist;
+    }
+    return negDist;
+}
+
 function createSortedList(initial = []) {
     return SortedList.create(
         {
@@ -107,49 +150,6 @@ class ChordNode extends EventEmitter {
     }
 
     /**
-     * Checks if node b is between node a and node c (i.e., a -> b -> c).
-     *
-     * @param {String} a node identifier a, hex
-     * @param {String} b node identifier b, hex
-     * @param {String} c node identifier c, hex
-     * @returns {boolean} whether or not b is beteen a and c
-     */
-    between(a, b, c) {
-        a = jsbi.BigInt(`0x${a}`);
-        b = jsbi.BigInt(`0x${b}`);
-        c = jsbi.BigInt(`0x${c}`);
-        if (jsbi.lessThan(a, c)) {
-            return jsbi.lessThan(a, b) && jsbi.lessThan(b, c);
-        }
-        return jsbi.lessThan(a, b) || jsbi.lessThan(b, c);
-    }
-
-    /**
-     * Returns the distance in key space between ids a, b
-     * @param {String} a node idenfitier a, hex
-     * @param {String} b node identifier b, hex
-     * @returns {BigInt} distance
-     */
-    distance(a, b) {
-        a = jsbi.BigInt(`0x${a}`);
-        b = jsbi.BigInt(`0x${b}`);
-
-        let exp = jsbi.exponentiate(jsbi.BigInt(4), m);
-        let posDist = jsbi.remainder(jsbi.add(jsbi.subtract(a, b), exp), exp);
-        if (this.verbosity >= VERBOSITY.INFO)
-            console.log("posDist", posDist.toString());
-
-        let negDist = jsbi.remainder(jsbi.add(jsbi.subtract(b, a), exp), exp);
-        if (this.verbosity >= VERBOSITY.INFO)
-            console.log("negDist", negDist.toString());
-
-        if (jsbi.lessThan(posDist, negDist)) {
-            return posDist;
-        }
-        return negDist;
-    }
-
-    /**
      * Notifies a node of this node's existence.
      *
      * @param {String} id identifier of node to be notified, hex string
@@ -178,6 +178,7 @@ class ChordNode extends EventEmitter {
      */
     join(id) {
         this.fingers[0] = id;
+        this.emit("fingerUpdate", this.fingers)
         return this.functions.connect(this.fingers[0]).then(() => {
             return new Promise((resolve, reject) => {
                 let count = 0;
@@ -218,7 +219,7 @@ class ChordNode extends EventEmitter {
                 // if successor does not have a predecessor, do nothing
                 if (!ps) return;
 
-                if (this.between(this.own_id, ps, this.fingers[0])) {
+                if (between(this.own_id, ps, this.fingers[0])) {
                     // if successor's predecessor (ps) is between this node and
                     // the successor, should switch successor to ps
                     let old_successor = this.fingers[0];
@@ -284,7 +285,7 @@ class ChordNode extends EventEmitter {
                 // been set
                 if (
                     this.predecessor === null ||
-                    this.between(this.predecessor, sender, this.own_id)
+                    between(this.predecessor, sender, this.own_id)
                 ) {
                     let oldPredecessor = this.predecessor;
                     this.predecessor = sender;
@@ -474,6 +475,7 @@ class ChordNode extends EventEmitter {
                     // identifier in the finger table, update the finger table
                     let old_finger = this.fingers[this.next];
                     this.fingers[this.next] = correct_finger;
+                    this.emit("fingerUpdate", this.fingers);
 
                     // do not disconnect from a finger if it is still somewhere
                     // else in the table; TODO: might need to care about edge
@@ -528,7 +530,7 @@ class ChordNode extends EventEmitter {
             }
 
             if (
-                this.between(this.own_id, id, this.fingers[0]) ||
+                between(this.own_id, id, this.fingers[0]) ||
                 id === this.fingers[0]
             )
                 // if id is between this node and the successor, then the
@@ -588,7 +590,7 @@ class ChordNode extends EventEmitter {
             // starting from the largest finger, add fingers that are between
             // this node and id
             if (this.fingers[i] === null) continue;
-            if (this.between(this.own_id, this.fingers[i], id))
+            if (between(this.own_id, this.fingers[i], id))
                 consult.push(this.fingers[i]);
         }
         return consult;
@@ -672,7 +674,7 @@ class ChordNode extends EventEmitter {
         let currMinNeigh;
 
         for (let neigh of neighbors) {
-            let dist = this.distance(neigh, nodeId);
+            let dist = distance(neigh, nodeId);
             if (currMinDist === undefined || jsbi.lessThan(dist, currMinDist)) {
                 currMinDist = dist;
                 currMinNeigh = neigh;
@@ -860,7 +862,10 @@ class ChordNode extends EventEmitter {
     }
 }
 
-module.exports = function (bits = 64) {
-    m = jsbi.BigInt(bits);
-    return ChordNode;
+module.exports = {
+    chordFunc: function (bits = 64) {
+        m = jsbi.BigInt(bits);
+        return ChordNode;
+    },
+    between: (a, b, c) => between(a, b, c),
 };
